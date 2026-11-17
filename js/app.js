@@ -1,0 +1,556 @@
+// Punktlandung – Start, Zustand und Aktionen.
+import {
+  store, api, ApiError, enablePush, currentSubscription, pushSupported, permission, platform, isIOS, isStandalone,
+  today, nowMin,
+} from './lib.js';
+import * as V from './views.js';
+import { toast, confetti, openSheet, closeSheet, haptic, runFlaps, resetFlaps, flapTo } from './ui.js';
+import { demoState } from './demo.js';
+
+const root = document.getElementById('app');
+
+const S = {
+  state: store.state,
+  prefs: store.prefs,
+  screen: 'boot',
+  tab: 'plan',
+  day: null,
+  busy: {},
+  lastSeenEvent: store.lastSeenEvent,
+  ob: { step: 'welcome', query: '', results: [], tooMany: false, searching: false, searchError: '', school: null, mode: 'password', busy: false, error: '', draft: {}, nameGuess: '' },
+};
+window.__pl = S; // für die Fehlersuche
+
+// ---------- Darstellung ----------
+let lastKey = '';
+function render() {
+  const key = S.screen === 'ob' ? 'ob:' + S.ob.step : S.screen === 'main' ? 'main:' + S.tab : S.screen;
+  const changed = key !== lastKey;
+  const scrollY = window.scrollY;
+  if (changed) {
+    resetFlaps();
+    clearInterval(S._wTimer);
+  }
+  root.innerHTML = S.screen === 'ob' ? V.onboarding(S) : S.screen === 'main' ? V.main(S) : V.loading();
+  root.classList.toggle('enter', changed);
+  root.classList.toggle('day-enter', !changed && !!S._dayChanged);
+  S._dayChanged = false;
+  if (changed) {
+    window.scrollTo(0, 0);
+    lastKey = key;
+    afterEnter();
+  } else {
+    window.scrollTo(0, scrollY);
+  }
+  afterRender(changed);
+}
+
+function afterRender(changed) {
+  runFlaps(root);
+  const sel = root.querySelector('.day.sel');
+  if (sel) {
+    const strip = root.querySelector('#days');
+    const target = sel.offsetLeft - strip.clientWidth / 2 + sel.clientWidth / 2;
+    if (changed || S._scrollDays) strip.scrollTo({ left: target, behavior: changed ? 'auto' : 'smooth' });
+    S._scrollDays = false;
+  }
+  if (S.screen === 'main' && S.tab === 'verlauf') markEventsSeen();
+}
+
+function afterEnter() {
+  if (S.screen === 'ob' && S.ob.step === 'welcome') {
+    const dot = root.querySelector('.ob-brand .wm-dot');
+    if (dot && !matchMedia('(prefers-reduced-motion: reduce)').matches) dot.style.opacity = '0';
+    setTimeout(landDot, 250);
+    const rows = root.querySelectorAll('#wboard .flap');
+    const foot = root.querySelector('#wboard .wb-foot');
+    let i = 0;
+    const show = () => {
+      if (!rows[0]?.isConnected) return clearInterval(S._wTimer);
+      const [a, b, c, title, body] = V.WELCOME_MSGS[i++ % V.WELCOME_MSGS.length];
+      flapTo(rows[0], a);
+      flapTo(rows[1], b);
+      foot.textContent = c;
+      const note = root.querySelector('.wnote');
+      if (note) {
+        note.querySelector('b').textContent = title;
+        note.querySelector('p').textContent = body;
+        note.classList.remove('pop');
+        void note.offsetWidth;
+        note.classList.add('pop');
+      }
+    };
+    setTimeout(show, 1100);
+    S._wTimer = setInterval(show, 3600);
+  }
+  if (S.screen === 'ob' && S.ob.step === 'school') setTimeout(() => root.querySelector('[data-in="schoolq"]')?.focus(), 350);
+  if (S.screen === 'ob' && S.ob.step === 'done') setTimeout(() => confetti({ y: 0.3 }), 450);
+}
+
+/** Der Markenpunkt fliegt im Bogen herein und landet hinter "punktlandung". */
+function landDot() {
+  const target = root.querySelector('.ob-brand .wm-dot');
+  if (!target || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = target.getBoundingClientRect();
+  const size = r.width;
+  const fly = document.createElement('span');
+  fly.className = 'fly-dot';
+  fly.style.width = fly.style.height = size + 'px';
+  document.body.appendChild(fly);
+  target.style.opacity = '0';
+  const sx = -40, sy = r.top + 140;
+  const ex = r.left, ey = r.top;
+  const peak = Math.min(sy, ey) - 120;
+  const frames = [];
+  const N = 16;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const x = sx + (ex - sx) * t;
+    const y = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * peak + t * t * ey;
+    frames.push({ transform: `translate(${x}px, ${y}px)`, offset: t });
+  }
+  const anim = fly.animate(frames, { duration: 900, easing: 'cubic-bezier(.3,.1,.3,1)', fill: 'forwards' });
+  // Spur aus kleinen Punkten
+  for (let i = 1; i < 6; i++) {
+    setTimeout(() => {
+      const t = i / 6;
+      const x = sx + (ex - sx) * t;
+      const y = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * peak + t * t * ey;
+      const g = document.createElement('span');
+      g.className = 'ghost-dot';
+      const s = size * (0.3 + t * 0.5);
+      g.style.cssText = `width:${s}px;height:${s}px;transform:translate(${x + (size - s) / 2}px, ${y + (size - s) / 2}px)`;
+      document.body.appendChild(g);
+      setTimeout(() => g.remove(), 900);
+    }, 900 * (i / 6) * 0.9);
+  }
+  anim.onfinish = () => {
+    target.style.opacity = '';
+    target.animate([{ transform: 'scale(1.5, .6)' }, { transform: 'scale(.9, 1.15)' }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' });
+    fly.remove();
+    haptic(12);
+  };
+}
+
+function applyPrefs() {
+  const el = document.documentElement;
+  const p = S.prefs;
+  if (p.theme === 'auto') delete el.dataset.theme;
+  else el.dataset.theme = p.theme;
+  el.dataset.accent = p.accent || 'lime';
+  const dark = p.theme === 'dark' || (p.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
+  const m = document.createElement('meta');
+  m.name = 'theme-color';
+  m.content = dark ? '#0D0D11' : '#F4F2ED';
+  document.head.appendChild(m);
+}
+
+function savePrefs(patch) {
+  S.prefs = { ...S.prefs, ...patch };
+  store.prefs = S.prefs;
+  applyPrefs();
+}
+
+function setState(st) {
+  S.state = st;
+  store.state = st;
+  updateBadge();
+}
+
+function updateBadge() {
+  if (!('setAppBadge' in navigator)) return;
+  const blocks = S.state?.snapshot?.blocks || [];
+  const t = today();
+  const n = nowMin();
+  const count = blocks.filter((b) => b.st === 'cancel' && (b.d > t || (b.d === t && b.e > n))).length;
+  try {
+    if (count) navigator.setAppBadge(count);
+    else navigator.clearAppBadge();
+  } catch { /* egal */ }
+}
+
+function markEventsSeen() {
+  const maxId = Math.max(0, ...(S.state?.events || []).map((e) => e.id));
+  if (maxId > (S.lastSeenEvent || 0)) {
+    S.lastSeenEvent = maxId;
+    store.lastSeenEvent = maxId;
+  }
+}
+
+// ---------- Server ----------
+async function loadState({ fromFocus = false } = {}) {
+  if (S.demo) return;
+  try {
+    const st = await api('state');
+    setState(st);
+    if (S.screen === 'main') render();
+    const last = st.account?.lastCheckAt ? Date.parse(st.account.lastCheckAt) : 0;
+    if (fromFocus && Date.now() - last > 4 * 60_000 && st.account?.status !== 'auth_failed') refresh(true);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) logoutLocal('Bitte melde dich neu an.');
+  }
+}
+
+async function refresh(silent = false) {
+  if (S.demo) return toast('Vorschau – hier wird nichts bei Untis geprüft.');
+  if (S.busy.refresh) return;
+  S.busy.refresh = true;
+  if (S.screen === 'main') render();
+  try {
+    const r = await api('refresh');
+    setState(r.state);
+    if (!silent) {
+      if (r.result?.ok === false) toast(r.result.error || 'Untis antwortet gerade nicht.');
+      else toast(r.result?.notices ? `${r.result.notices} neue Meldung${r.result.notices > 1 ? 'en' : ''}!` : 'Alles geprüft – nichts Neues.');
+    }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) return logoutLocal('Bitte melde dich neu an.');
+    if (!silent) toast(e.message);
+  } finally {
+    S.busy.refresh = false;
+    if (S.screen === 'main') render();
+  }
+}
+
+/** Hält das Push-Abo dieses Geräts aktuell (z. B. nach Neuinstallation oder neuem Schlüssel). */
+async function syncPush() {
+  if (S.demo) return;
+  try {
+    if (!pushSupported() || permission() !== 'granted' || !S.state?.vapidPublicKey) return;
+    let sub = await currentSubscription(S.state.vapidPublicKey);
+    if (!sub) {
+      const reg = await navigator.serviceWorker.ready;
+      const raw = atob(S.state.vapidPublicKey.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (S.state.vapidPublicKey.length % 4)) % 4));
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
+    }
+    const last = Number(localStorage.getItem('pl.subSync') || 0);
+    if (!S.state.device?.push || Date.now() - last > 86400000) {
+      await api('subscribe', { subscription: sub.toJSON(), platform: platform() });
+      localStorage.setItem('pl.subSync', String(Date.now()));
+      if (!S.state.device?.push) loadState();
+    }
+  } catch { /* still */ }
+}
+
+function logoutLocal(msg) {
+  store.clear();
+  S.state = null;
+  S.screen = 'ob';
+  S.ob = { ...S.ob, step: 'welcome', error: '', busy: false };
+  render();
+  if (msg) toast(msg);
+}
+
+// ---------- Schulsuche ----------
+let searchTimer;
+let searchSeq = 0;
+function searchSchools(q) {
+  S.ob.query = q;
+  clearTimeout(searchTimer);
+  const box = () => root.querySelector('#results');
+  if (q.trim().length < 3) {
+    S.ob.results = [];
+    S.ob.tooMany = false;
+    S.ob.searchError = '';
+    if (box()) box().innerHTML = V.schoolResults(S);
+    return;
+  }
+  S.ob.searching = true;
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq;
+    if (box() && !S.ob.results.length) box().innerHTML = V.schoolResults(S);
+    try {
+      const r = await api('schools', { q: q.trim() }, { auth: false, timeout: 15000 });
+      if (seq !== searchSeq) return;
+      S.ob.results = r.schools || [];
+      S.ob.tooMany = !!r.tooMany;
+      S.ob.searchError = '';
+    } catch (e) {
+      if (seq !== searchSeq) return;
+      S.ob.searchError = e.message;
+    }
+    S.ob.searching = false;
+    if (box()) box().innerHTML = V.schoolResults(S);
+  }, 320);
+}
+
+function guessName(st, user) {
+  const raw = (st?.account?.name || '').trim();
+  if (raw.includes(',')) return raw.split(',')[1].trim().split(/\s+/)[0];
+  if (raw) return raw.split(/\s+/)[0];
+  const u = (user || '').split(/[._-]/)[0];
+  return u ? u[0].toUpperCase() + u.slice(1).toLowerCase() : '';
+}
+
+// ---------- Aktionen ----------
+const actions = {
+  start() {
+    S.ob.step = isIOS && !isStandalone() ? 'install' : 'school';
+    render();
+  },
+  browserAnyway() { S.ob.step = 'school'; render(); },
+  obBack() {
+    const order = { install: 'welcome', school: isIOS && !isStandalone() ? 'install' : 'welcome', login: 'school', push: 'login' };
+    S.ob.step = order[S.ob.step] || 'welcome';
+    S.ob.error = '';
+    render();
+  },
+  pickSchool(el) {
+    S.ob.school = S.ob.results[Number(el.dataset.i)];
+    S.ob.step = 'login';
+    S.ob.error = '';
+    haptic();
+    render();
+    setTimeout(() => root.querySelector('input[name="user"]')?.focus(), 350);
+  },
+  changeSchool() { S.ob.step = 'school'; render(); },
+  mode(el) {
+    const user = root.querySelector('input[name="user"]')?.value || '';
+    S.ob.draft = { ...S.ob.draft, user };
+    S.ob.mode = el.dataset.v;
+    S.ob.error = '';
+    render();
+  },
+  togglePw(el) {
+    const input = el.parentElement.querySelector('input');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    el.setAttribute('aria-label', show ? 'Passwort verbergen' : 'Passwort zeigen');
+  },
+  async connect(form) {
+    if (S.ob.busy) return;
+    const fd = new FormData(form);
+    const user = String(fd.get('user') || '').trim();
+    const password = String(fd.get('password') || '');
+    const secret = String(fd.get('secret') || '');
+    S.ob.draft = { user };
+    S.ob.pw = password; // nur im Speicher, damit es nach einem Fehler nicht neu getippt werden muss
+    if (!user || (!password && !secret)) {
+      S.ob.error = 'Bitte füll beide Felder aus.';
+      return render();
+    }
+    S.ob.busy = true;
+    S.ob.error = '';
+    render();
+    try {
+      const sch = S.ob.school;
+      const r = await api('connect', {
+        server: sch.server, school: sch.school, schoolName: sch.name, user,
+        ...(S.ob.mode === 'secret' ? { secret } : { password }), platform: platform(),
+      }, { auth: false, timeout: 60000 });
+      store.token = r.token;
+      S.ob.pw = '';
+      setState(r.state);
+      S.ob.nameGuess = guessName(r.state, user);
+      S.ob.busy = false;
+      S.ob.step = pushSupported() && permission() === 'granted' ? 'done' : 'push';
+      if (S.ob.step === 'done') await actions.allowPush(null, true);
+      render();
+    } catch (e) {
+      S.ob.busy = false;
+      S.ob.error = e.message;
+      render();
+      root.querySelector('.form')?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }], { duration: 280 });
+    }
+  },
+  async allowPush(_el, quiet = false) {
+    S.ob.busy = true;
+    S.ob.error = '';
+    if (!quiet) render();
+    try {
+      const sub = await enablePush(S.state.vapidPublicKey);
+      await api('subscribe', { subscription: sub, platform: platform() });
+      localStorage.setItem('pl.subSync', String(Date.now()));
+      const st = await api('state');
+      setState(st);
+      S.ob.step = 'done';
+    } catch (e) {
+      S.ob.error = e.message;
+    }
+    S.ob.busy = false;
+    if (!quiet) render();
+  },
+  skipPush() { S.ob.step = 'done'; render(); },
+  finish() {
+    const nick = root.querySelector('[data-in="nick"]')?.value.trim();
+    if (nick) savePrefs({ nick });
+    S.screen = 'main';
+    S.tab = 'plan';
+    render();
+  },
+  tab(el) {
+    S.tab = el.dataset.v;
+    haptic(5);
+    render();
+  },
+  day(el) {
+    S._dayChanged = S.day !== el.dataset.v;
+    S.day = el.dataset.v;
+    if (S.tab !== 'plan') S.tab = 'plan';
+    S._scrollDays = true;
+    haptic(5);
+    render();
+  },
+  lesson(el) {
+    const b = S.state?.snapshot?.blocks?.[Number(el.dataset.i)];
+    if (!b) return;
+    openSheet(V.lessonSheet(b));
+    if (b.st === 'cancel' && b.d >= today()) setTimeout(() => confetti({ y: 0.55, count: 70 }), 250);
+  },
+  closeSheet() { closeSheet(); },
+  refresh() { refresh(false); },
+  relogin() {
+    S.screen = 'ob';
+    S.ob.step = 'login';
+    S.ob.school = { server: S.state?.account?.server, school: S.state?.account?.school, name: S.state?.account?.schoolName };
+    S.ob.mode = S.state?.account?.authKind === 'secret' ? 'secret' : 'password';
+    S.ob.draft = { user: S.state?.account?.user || '' };
+    render();
+  },
+  async test() {
+    if (S.demo) return toast('Vorschau – Test-Nachricht geht nur mit echtem Konto.');
+    if (S.busy.test) return;
+    S.busy.test = true;
+    render();
+    try {
+      const r = await api('test');
+      toast(r.sent ? 'Unterwegs! Schau auf deinen Sperrbildschirm.' : r.errors?.[0] ? `Ging nicht: ${r.errors[0]}` : 'Auf diesem Gerät sind Mitteilungen noch aus.');
+    } catch (e) {
+      toast(e.message);
+    }
+    S.busy.test = false;
+    render();
+  },
+  async pushOn() {
+    if (S.demo) return toast('Vorschau – Mitteilungen gehen nur mit echtem Konto.');
+    S.busy.push = true;
+    render();
+    try {
+      const sub = await enablePush(S.state.vapidPublicKey);
+      await api('subscribe', { subscription: sub, platform: platform() });
+      localStorage.setItem('pl.subSync', String(Date.now()));
+      await loadState();
+      toast('Mitteilungen sind an 🎉');
+    } catch (e) {
+      toast(e.message, 4200);
+    }
+    S.busy.push = false;
+    render();
+  },
+  async toggleRestore(el) {
+    const restore = el.checked;
+    if (S.demo) return;
+    try {
+      const r = await api('settings', { settings: { restore } });
+      setState(r.state);
+    } catch (e) {
+      el.checked = !restore;
+      toast(e.message);
+    }
+  },
+  theme(el) { savePrefs({ theme: el.dataset.v }); render(); },
+  accent(el) { savePrefs({ accent: el.dataset.v }); haptic(); render(); },
+  howInstall() { openSheet(V.installSheet()); },
+  logout() { openSheet(V.confirmLogoutSheet()); },
+  async logoutConfirm() {
+    if (S.demo) { closeSheet(); location.href = location.pathname; return; }
+    try {
+      await api('logout', { everything: true });
+    } catch { /* lokal trotzdem abmelden */ }
+    try {
+      const sub = pushSupported() ? await (await navigator.serviceWorker.ready).pushManager.getSubscription() : null;
+      await sub?.unsubscribe();
+    } catch { /* egal */ }
+    closeSheet();
+    logoutLocal('Abgemeldet – alles gelöscht.');
+  },
+};
+
+const inputs = {
+  schoolq(el) { searchSchools(el.value); },
+  nick(el) {
+    clearTimeout(inputs._t);
+    inputs._t = setTimeout(() => savePrefs({ nick: el.value.trim() }), 300);
+  },
+};
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el || el.disabled) return;
+  const fn = actions[el.dataset.act];
+  if (!fn) return;
+  if (el.tagName !== 'INPUT') e.preventDefault();
+  fn(el, e);
+});
+document.addEventListener('input', (e) => {
+  const el = e.target.closest('[data-in]');
+  if (el && inputs[el.dataset.in]) inputs[el.dataset.in](el, e);
+});
+document.addEventListener('submit', (e) => {
+  const f = e.target.closest('form[data-submit]');
+  if (!f) return;
+  e.preventDefault();
+  actions[f.dataset.submit]?.(f, e);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSheet();
+});
+
+// ---------- Start ----------
+function openFromUrl(url) {
+  try {
+    const u = new URL(url, location.href);
+    if (u.searchParams.has('d')) {
+      S.day = u.searchParams.get('d');
+      S.tab = 'plan';
+      S._scrollDays = true;
+    } else if (u.searchParams.has('ich')) S.tab = 'ich';
+  } catch { /* egal */ }
+}
+
+async function boot() {
+  applyPrefs();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyPrefs);
+  const demo = new URLSearchParams(location.search).has('demo');
+  if ('serviceWorker' in navigator) {
+    if (!demo) navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data?.type === 'push') loadState();
+      if (e.data?.type === 'open') {
+        openFromUrl(e.data.url);
+        if (S.screen === 'main') render();
+        loadState();
+      }
+    });
+  }
+  if (location.search) {
+    openFromUrl(location.href);
+    if (!demo) history.replaceState(null, '', location.pathname);
+  }
+  if (demo) {
+    S.demo = true;
+    S.state = demoState();
+    S.prefs = { ...S.prefs, nick: S.prefs.nick || 'Emil' };
+    S.screen = 'main';
+    render();
+    return;
+  }
+  if (store.token) {
+    S.screen = 'main';
+    render();
+    await loadState();
+    syncPush();
+  } else {
+    S.screen = 'ob';
+    render();
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && store.token && S.screen === 'main') loadState({ fromFocus: true });
+  });
+  setInterval(() => {
+    if (document.visibilityState === 'visible' && S.screen === 'main' && !document.querySelector('.sheet')) render();
+  }, 60_000);
+}
+
+boot();
