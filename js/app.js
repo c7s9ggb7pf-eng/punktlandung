@@ -675,6 +675,14 @@ async function boot() {
   const demo = new URLSearchParams(location.search).has('demo');
   if ('serviceWorker' in navigator) {
     if (!demo) navigator.serviceWorker.register('./sw.js').catch(() => {});
+    // Neue Version installiert → einmal neu laden, damit nicht alte und neue Dateien gemischt laufen.
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
     navigator.serviceWorker.addEventListener('message', (e) => {
       if (e.data?.type === 'push') loadState();
       if (e.data?.type === 'open') {
