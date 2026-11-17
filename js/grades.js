@@ -1,0 +1,111 @@
+// Punktlandung – Noten und Abi-Hochrechnung (NRW, Punkte 0–15). Alles bleibt auf dem Gerät.
+//
+// Datenform (localStorage „pl.grades“):
+//   { abiYear: 2027,
+//     subjects: [{ id, name, su, lk: bool, abi: 0–4 }],
+//     entries:  [{ id, sid, hj: 0–3, kind: 'k' | 's' | 'z', pts, at }],   // Klausur, Sonstige Mitarbeit, Zeugnis
+//     exams:    { [sid]: pts } }                                          // Abiturprüfung
+
+export const HJ = ['Q1.1', 'Q1.2', 'Q2.1', 'Q2.2'];
+export const KIND = { k: 'Klausur', s: 'Mitarbeit', z: 'Zeugnis' };
+const NOTE = ['6', '5-', '5', '5+', '4-', '4', '4+', '3-', '3', '3+', '2-', '2', '2+', '1-', '1', '1+'];
+export const noteOf = (p) => NOTE[p] ?? '';
+export const tone = (p) => (p >= 13 ? 'g1' : p >= 10 ? 'g2' : p >= 5 ? 'g3' : 'g4');
+export const fmt1 = (x) => (x == null || Number.isNaN(x) ? '–' : x.toFixed(1).replace('.', ','));
+
+export const uid = () => Math.random().toString(36).slice(2, 10);
+
+export function defaultAbiYear(now = new Date()) {
+  return now.getMonth() >= 7 ? now.getFullYear() + 1 : now.getFullYear();
+}
+
+/** Laufendes Halbjahr der Qualifikationsphase (0–3) oder -1 davor. */
+export function currentHj(abiYear, now = new Date()) {
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0 = Jan
+  const sy = m >= 7 ? y : y - 1; // Schuljahr beginnt im August
+  const firstHalf = m >= 7 || m === 0; // Aug–Jan
+  const q1Start = abiYear - 2;
+  if (sy < q1Start) return -1;
+  if (sy === q1Start) return firstHalf ? 0 : 1;
+  if (sy === q1Start + 1) return firstHalf ? 2 : 3;
+  return 3;
+}
+
+export function empty(abiYear = defaultAbiYear()) {
+  return { abiYear, subjects: [], entries: [], exams: {} };
+}
+
+/** Fächer aus dem Stundenplan übernehmen (einmal, beim ersten Öffnen). */
+export function subjectsFromBlocks(blocks) {
+  const seen = new Map();
+  for (const b of blocks || []) {
+    const key = (b.sl || b.su || '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.set(key, { id: uid(), name: key, su: b.su || key, lk: /\bLK\b|leistungs/i.test(`${b.sl} ${b.su}`), abi: 0 });
+  }
+  return [...seen.values()].sort((a, b) => Number(b.lk) - Number(a.lk) || a.name.localeCompare(b.name, 'de'));
+}
+
+const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+/** Punkte eines Fachs in einem Halbjahr: Zeugnisnote, sonst aus Klausuren + Mitarbeit geschätzt. */
+export function hjResult(G, sid, hj) {
+  const es = G.entries.filter((e) => e.sid === sid && e.hj === hj);
+  const z = es.filter((e) => e.kind === 'z');
+  if (z.length) return { pts: z[z.length - 1].pts, est: false };
+  const k = avg(es.filter((e) => e.kind === 'k').map((e) => e.pts));
+  const s = avg(es.filter((e) => e.kind === 's').map((e) => e.pts));
+  if (k == null && s == null) return null;
+  const v = k != null && s != null ? (k + s) / 2 : (k ?? s);
+  return { pts: Math.round(v), est: true };
+}
+
+export function subjectAvg(G, sid) {
+  return avg(HJ.map((_, i) => hjResult(G, sid, i)).filter(Boolean).map((r) => r.pts));
+}
+
+/**
+ * Hochrechnung nach APO-GOSt NRW (vereinfacht):
+ * Block I = P / S × 40 (LK-Kurse doppelt in P und S, max. 600), eingebracht werden alle LK-Kurse,
+ * alle Kurse der Abifächer und die besten übrigen – anteilig zu den Halbjahren mit Noten (40 Kurse bei 4).
+ * Block II = 4 Abiturprüfungen × 5 (max. 300); fehlt eine Prüfung, zählt der Fachschnitt.
+ * Note = 17/3 − E/180, auf eine Nachkommastelle abgeschnitten.
+ */
+export function abi(G) {
+  const courses = [];
+  for (const sub of G.subjects) {
+    HJ.forEach((_, hj) => {
+      const r = hjResult(G, sub.id, hj);
+      if (r) courses.push({ sid: sub.id, hj, pts: r.pts, est: r.est, lk: sub.lk, must: sub.lk || sub.abi > 0 });
+    });
+  }
+  if (!courses.length) return null;
+  const hjs = new Set(courses.map((c) => c.hj)).size;
+  const cap = Math.max(1, Math.round((40 * hjs) / 4));
+  const must = courses.filter((c) => c.must);
+  const rest = courses.filter((c) => !c.must).sort((a, b) => b.pts - a.pts);
+  const chosen = [...must, ...rest].slice(0, Math.max(cap, must.length));
+  const P = chosen.reduce((s, c) => s + c.pts * (c.lk ? 2 : 1), 0);
+  const Sn = chosen.reduce((s, c) => s + (c.lk ? 2 : 1), 0);
+  const block1 = Math.min(600, Math.round((P / Sn) * 40));
+  const deficits = chosen.filter((c) => c.pts < 5).length;
+
+  const abiSubs = G.subjects.filter((s) => s.abi > 0).sort((a, b) => a.abi - b.abi).slice(0, 4);
+  const overall = avg(courses.map((c) => c.pts));
+  let exEst = false;
+  const exams = [0, 1, 2, 3].map((i) => {
+    const sub = abiSubs[i];
+    if (sub && G.exams?.[sub.id] != null) return G.exams[sub.id];
+    exEst = true;
+    return Math.round(sub ? (subjectAvg(G, sub.id) ?? overall) : overall);
+  });
+  const block2 = Math.min(300, exams.reduce((a, b) => a + b, 0) * 5);
+  const total = block1 + block2;
+  const passed = total >= 300 && block1 >= 200 && block2 >= 100;
+  const note = Math.max(1, Math.floor((17 / 3 - total / 180) * 10 + 1e-9) / 10);
+  return {
+    block1, block2, total, passed, deficits, note: passed ? note : null,
+    est: hjs < 4 || exEst || chosen.some((c) => c.est), hjs, abiCount: abiSubs.length, examsMissing: exEst,
+  };
+}

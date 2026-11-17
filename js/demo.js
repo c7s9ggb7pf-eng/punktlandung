@@ -1,5 +1,6 @@
 // Punktlandung – Beispieldaten für die Vorschau (Aufruf mit ?demo). Spricht nicht mit Untis.
-import { today, addDays, weekday } from './lib.js';
+import { today, addDays, weekday, hhmm, dayWord, fmtPeriod } from './lib.js';
+import { uid, defaultAbiYear } from './grades.js';
 
 const U = { 1: [480, 525], 2: [530, 575], 3: [595, 640], 4: [645, 690], 5: [710, 755], 6: [760, 805], 7: [825, 870], 8: [875, 920] };
 const WEEK = [
@@ -37,6 +38,10 @@ export function demoState() {
   set(find(next(6), 5), { st: 'cancel' });
   set(find(wd >= 1 && wd <= 5 ? t : next(1), 3), { st: 'change', ro: ['B12'], notes: ['Raum B12 statt ' + (find(wd >= 1 && wd <= 5 ? t : next(1), 3)?.ro[0] || 'A12')] });
   set(find(next(4), 5), { st: 'exam', lt: 'Klausur Q2.1' });
+  return demoBuild(blocks, mon, tomorrow, next);
+}
+
+function demoBuild(blocks, mon, tomorrow, next) {
   const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
   return {
     demo: true,
@@ -45,14 +50,45 @@ export function demoState() {
       className: 'Q2', authKind: 'password', status: 'ok', lastError: null, lastCheckAt: ago(1), lastSuccessAt: ago(1), settings: { restore: true },
     },
     snapshot: { fetchedAt: ago(1), from: mon, to: addDays(mon, 11), blocks },
-    events: [
-      { id: 3, kind: 'cancel', title: '😴 Ausschlafen! Englisch LK fällt aus', body: 'Morgen · 1.–2. Stunde · 08:00–09:35 · Dein Tag startet erst um 09:55', date: tomorrow, at: ago(14), sent: 1 },
-      { id: 2, kind: 'cancel', title: '🎉 Kunst fällt aus', body: 'Übermorgen · 5.–6. Stunde · 11:50–13:25 · Aufgaben auf Moodle', date: next(2), at: ago(190), sent: 1 },
-      { id: 1, kind: 'restore', title: '⚠️ Doch Unterricht: Mathematik', body: 'Fr · 5.–6. Stunde · 11:50–13:25 – der Ausfall wurde zurückgenommen.', date: next(3), at: ago(60 * 26), sent: 1 },
-    ],
+    events: demoEvents(blocks, tomorrow, next),
     device: { push: true, pushError: null, pushOkAt: ago(14), platform: 'ios' },
     pushDevices: 1,
     vapidPublicKey: '',
     serverTime: new Date().toISOString(),
   };
+}
+
+// Meldungen passend zu den Beispiel-Ausfällen (nicht mit festen Fächernamen).
+function demoEvents(blocks, tomorrow, next) {
+  const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const at = (d, p) => blocks.find((b) => b.d === d && b.p.startsWith(String(p)));
+  const a = at(tomorrow, 1);
+  const first = blocks.filter((b) => b.d === tomorrow && b.st !== 'cancel').reduce((m, b) => Math.min(m, b.s), 9999);
+  const b = at(next(2), 5);
+  const c = at(next(3), 5);
+  const line = (x) => `${dayWord(x.d)} · ${fmtPeriod(x.p)} · ${hhmm(x.s)}–${hhmm(x.e)}`;
+  const out = [];
+  if (a) out.push({ id: 3, kind: 'cancel', title: `😴 Ausschlafen! ${a.sl} fällt aus`, body: `${line(a)} · Dein Tag startet erst um ${hhmm(first)}`, date: a.d, at: ago(14), sent: 1 });
+  if (b) out.push({ id: 2, kind: 'cancel', title: `🎉 ${b.sl} fällt aus`, body: `${line(b)}${b.info ? ' · ' + b.info : ''}`, date: b.d, at: ago(190), sent: 1 });
+  if (c) out.push({ id: 1, kind: 'restore', title: `⚠️ Doch Unterricht: ${c.sl}`, body: `${line(c)} – der Ausfall wurde zurückgenommen.`, date: c.d, at: ago(60 * 26), sent: 1 });
+  return out;
+}
+
+// Beispielnoten für die Vorschau (werden nicht gespeichert).
+export function demoGrades(state) {
+  const names = [...new Map((state.snapshot.blocks || []).map((b) => [b.sl, b])).values()];
+  const pts = { 'Englisch LK': [12, 13, 12], 'Sport LK': [11, 12, 13], Mathematik: [9, 10, 8], Deutsch: [10, 9, 11], Biologie: [11, 11, 12], Erdkunde: [10, 12, 11], Religion: [13, 12, 13], Kunst: [12, 11], Projektkurs: [13, 13] };
+  const abi = { 'Englisch LK': 1, 'Sport LK': 2, Mathematik: 3, Deutsch: 4 };
+  const subjects = names.map((b) => ({ id: uid(), name: b.sl, su: b.su, lk: / LK$/.test(b.sl), abi: abi[b.sl] || 0 }));
+  const entries = [];
+  for (const s of subjects) {
+    (pts[s.name] || []).forEach((p, hj) => {
+      if (hj < 2) entries.push({ id: uid(), sid: s.id, hj, kind: 'z', pts: p, at: '' });
+      else {
+        entries.push({ id: uid(), sid: s.id, hj, kind: 'k', pts: p, at: '' });
+        entries.push({ id: uid(), sid: s.id, hj, kind: 's', pts: Math.min(15, p + 1), at: '' });
+      }
+    });
+  }
+  return { abiYear: defaultAbiYear(), subjects, entries, exams: {}, _seeded: true };
 }

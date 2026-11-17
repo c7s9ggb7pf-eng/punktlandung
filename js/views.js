@@ -1,9 +1,10 @@
 // Punktlandung – Ansichten (reines HTML aus dem Zustand).
 import { esc, icon, hue, flap } from './ui.js';
 import {
-  today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod,
-  WD, isIOS, isStandalone, pushSupported, permission, VERSION,
+  today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod, parseDay,
+  WD, WD_LONG, isIOS, isStandalone, pushSupported, permission, VERSION,
 } from './lib.js';
+import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi } from './grades.js';
 
 const wordmark = (cls = '') => `<span class="wordmark ${cls}" aria-label="Punktlandung">punktlandung<span class="wm-dot"></span></span>`;
 
@@ -196,33 +197,11 @@ export function onboarding(S) {
 // ============================================================ Hauptbereich
 
 const isPast = (b, t, n) => b.d < t || (b.d === t && b.e <= n);
+const units = (list) => list.reduce((s, b) => s + (b.ks?.length || 1), 0);
+const MON = ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sep.', 'Okt.', 'Nov.', 'Dez.'];
 
-
-
-function tiles(blocks) {
-  const t = today();
-  const n = nowMin();
-  const real = blocks.filter((b) => b.st !== 'cancel');
-  const nowB = real.find((b) => b.d === t && b.s <= n && b.e > n);
-  const nextB = real.find((b) => b.d > t || (b.d === t && b.s > n));
-  let a;
-  if (nowB) {
-    a = `<div class="tile"><small><i class="live-dot"></i>Jetzt · bis ${hhmm(nowB.e)}</small><b>${esc(nowB.sl)}</b><span>${esc(nowB.ro.length ? 'Raum ' + nowB.ro.join(', ') : ' ')}</span></div>`;
-  } else if (nextB) {
-    const when = nextB.d === t ? `Gleich · ${hhmm(nextB.s)}` : `${nextB.d === addDays(t, 1) ? 'Morgen' : WD[weekday(nextB.d)]} · ${hhmm(nextB.s)}`;
-    a = `<div class="tile"><small>${icon('clock')}${when}</small><b>${esc(nextB.sl)}</b><span>${esc(nextB.ro.length ? 'Raum ' + nextB.ro.join(', ') : ' ')}</span></div>`;
-  } else {
-    a = '<div class="tile"><small>Als Nächstes</small><b>Nichts geplant</b><span>Genieß die Zeit</span></div>';
-  }
-  const wd = weekday(t);
-  const mon = addDays(t, wd === 0 ? -6 : 1 - wd);
-  const sun = addDays(mon, 6);
-  const units = blocks.filter((b) => b.st === 'cancel' && b.d >= mon && b.d <= sun).reduce((s, b) => s + (b.ks?.length || 1), 0);
-  const b = `<div class="tile accent"><small>Diese Woche frei</small>${flap(String(Math.min(units, 99)).padStart(2, '0'), 'num')}<span>${units === 1 ? 'Stunde fällt aus' : 'Stunden fallen aus'}</span></div>`;
-  return `<div class="tiles">${a}${b}</div>`;
-}
-
-function dayList(S, blocks) {
+/** Schultage im geladenen Zeitraum (Wochenende nur, wenn dort Unterricht steht). */
+export function dayList(S, blocks) {
   const snap = S.state?.snapshot;
   const t = today();
   const from = snap?.from && snap.from < t ? snap.from : t;
@@ -244,84 +223,50 @@ export function defaultDay(S) {
   if (S.day && days.includes(S.day)) return S.day;
   const todayLeft = blocks.some((b) => b.d === t && b.e > n);
   if (days.includes(t) && todayLeft) return t;
-  return days.find((d) => d > t && blocks.some((b) => b.d === d)) || days.find((d) => d >= t) || t;
+  return days.find((d) => d > t && blocks.some((b) => b.d === d)) || days.find((d) => d >= t) || days[0] || t;
 }
 
-function dayChips(S, blocks, sel) {
-  const t = today();
-  const days = dayList(S, blocks);
-  let prevW = null;
-  return `<div class="days" id="days">${days.map((d) => {
-    const w = weekday(d);
-    const sep = prevW != null && w < prevW ? '<span class="wk-sep" aria-hidden="true"></span>' : '';
-    prevW = w;
-    const hasCancel = blocks.some((b) => b.d === d && b.st === 'cancel');
-    const hasChange = blocks.some((b) => b.d === d && b.st === 'change');
-    const free = !blocks.some((b) => b.d === d && b.st !== 'cancel');
-    return `${sep}<button class="day ${d === sel ? 'sel' : ''} ${d === t ? 'today' : ''} ${d < t ? 'past' : ''}" data-act="day" data-v="${d}" aria-pressed="${d === sel}">
-      <span>${d === t ? 'Heute' : WD[w]}</span><b>${Number(d.slice(8))}</b>
-      ${hasCancel ? `<i class="pip ${free ? 'full' : ''}"></i>` : hasChange ? '<i class="pip change"></i>' : ''}
-    </button>`;
-  }).join('')}</div>`;
-}
+const monday = (d) => addDays(d, -((weekday(d) + 6) % 7));
 
-function lessonCard(b, i, t, n) {
-  const past = isPast(b, t, n);
-  const now = b.d === t && b.s <= n && b.e > n;
-  const prog = now ? Math.round(((n - b.s) / (b.e - b.s)) * 100) : 0;
-  const meta = [b.ro.length ? b.ro.join(', ') : '', b.te.join(', ')].filter(Boolean).join(' · ');
-  let stamp = '';
-  let tag = '';
-  let extra = '';
-  if (b.st === 'cancel') {
-    stamp = '<span class="stamp">Fällt aus</span>';
-    extra = b.rep ? `Stattdessen: ${b.rep}` : b.info || '';
-  } else if (b.st === 'change') {
-    const roomOnly = b.notes.some((x) => x.startsWith('Raum')) && !b.notes.some((x) => x.startsWith('Vertretung'));
-    tag = `<span class="tag change">${roomOnly ? 'Raum neu' : 'Geändert'}</span>`;
-    extra = [...b.notes, b.info].filter(Boolean).join(' · ');
-  } else if (b.st === 'exam') {
-    stamp = '<span class="stamp exam">Klausur</span>';
-  } else if (b.info) {
-    extra = b.info;
+/** Die sichtbaren Tage je Ansicht (1 Tag, 3 Tage, Woche). */
+export function visibleDays(S) {
+  const blocks = S.state?.snapshot?.blocks || [];
+  const all = dayList(S, blocks);
+  const anchor = defaultDay(S);
+  const view = S.prefs.view || 3;
+  if (!all.length) return { all, days: [anchor], anchor };
+  if (view === 5) {
+    const m = monday(anchor);
+    return { all, days: all.filter((d) => monday(d) === m), anchor };
   }
-  return `<button class="ticket ${b.st} ${past ? 'past' : ''} ${now ? 'now' : ''}" data-act="lesson" data-i="${i}" style="--h:${hue(b.su)};--p:${prog}%">
-    <span class="tk-main">
-      <span class="tk-time"><b>${hhmm(b.s)}</b><span>${hhmm(b.e)}</span></span>
-      <span class="tk-body">
-        <span class="tk-sub"><i></i><span>${esc(b.sl)}</span></span>
-        ${meta ? `<span class="tk-meta">${esc(meta)}</span>` : ''}
-        ${extra ? `<span class="tk-extra">${esc(extra)}</span>` : ''}
-      </span>
-      ${tag}
-    </span>
-    <span class="tk-stub"><small>${now ? 'Jetzt' : 'Std.'}</small><b>${esc(b.p || '–')}</b></span>
-    ${stamp}${now ? '<span class="tk-progress"></span>' : ''}
-  </button>`;
+  if (view === 1) return { all, days: [anchor], anchor };
+  let i = Math.max(0, all.indexOf(anchor));
+  i = Math.min(i, Math.max(0, all.length - 3));
+  return { all, days: all.slice(i, i + 3), anchor };
 }
 
-function dayView(S, blocks, sel) {
-  const t = today();
-  const n = nowMin();
-  const list = blocks.map((b, i) => [b, i]).filter(([b]) => b.d === sel);
-  const units = list.filter(([b]) => b.st !== 'cancel').reduce((s, [b]) => s + (b.ks?.length || 1), 0);
-  const w = weekday(sel);
-  let body;
-  if (!list.length) {
-    body = `<div class="empty"><div class="empty-ico">${w === 0 || w === 6 ? '🛋️' : '🎈'}</div><b>${w === 0 || w === 6 ? 'Wochenende' : 'Kein Unterricht'}</b><span>${w === 0 || w === 6 ? 'Lehn dich zurück.' : 'An diesem Tag steht nichts im Plan.'}</span></div>`;
-  } else {
-    const out = [];
-    let lastEnd = null;
-    for (const [b, i] of list) {
-      if (lastEnd != null && b.s - lastEnd >= 30) out.push(`<div class="gap">Freistunde · ${b.s - lastEnd} Min.</div>`);
-      out.push(lessonCard(b, i, t, n));
-      lastEnd = Math.max(lastEnd ?? 0, b.e);
-    }
-    body = out.join('');
+/** Neuer Ankertag beim Blättern (oder null am Rand). */
+export function stepDay(S, dir) {
+  const { all, days } = visibleDays(S);
+  const view = S.prefs.view || 3;
+  if (view === 5) {
+    const m = monday(days[0]);
+    const target = all.find((d) => (dir > 0 ? d > addDays(m, 6) : d < m && monday(d) === monday(addDays(m, -7))));
+    return target || null;
   }
-  const allFree = list.length && !units;
-  return `<div class="day-head"><h3>${esc(dateLong(sel))}</h3><span>${allFree ? '<b class="acc">frei 🎉</b>' : list.length ? `${units} ${units === 1 ? 'Stunde' : 'Stunden'}` : ''}</span></div>
-    <div class="lessons">${body}</div>`;
+  const i = all.indexOf(days[0]);
+  const j = i + dir * (view === 1 ? 1 : 3);
+  if (dir > 0 && i + (view === 1 ? 1 : 3) >= all.length) return null;
+  return all[Math.max(0, Math.min(all.length - 1, j))] ?? null;
+}
+
+function rangeLabel(days, view) {
+  const a = parseDay(days[0]);
+  const b = parseDay(days[days.length - 1]);
+  if (view === 1) return esc(dateLong(days[0]));
+  const left = `${view === 5 ? '' : WD[a.getDay()] + ' '}${a.getDate()}.${a.getMonth() === b.getMonth() ? '' : ' ' + MON[a.getMonth()]}`;
+  const right = `${view === 5 ? '' : WD[b.getDay()] + ' '}${b.getDate()}. ${MON[b.getMonth()]}`;
+  return `${left} – ${right}`;
 }
 
 function liveChip(S) {
@@ -335,98 +280,322 @@ function liveChip(S) {
 
 function boardDay(d) {
   const n = daysFromToday(d);
-  if (n === 0) return 'Heute';
-  if (n === 1) return 'Morgen';
-  if (n === 2) return 'Übermorgen';
-  const [, m, dd] = d.split('-');
-  return `${WD[weekday(d)]} ${dd}.${m}.`;
+  if (n === 0) return 'heute';
+  if (n === 1) return 'morgen';
+  if (n === 2) return 'übermorgen';
+  return `${WD_LONG[weekday(d)]}, ${Number(d.slice(8))}.${Number(d.slice(5, 7))}.`;
 }
-const cut = (s, n = 13) => (String(s).length <= n ? String(s) : String(s).slice(0, n - 1) + '.');
-const units = (list) => list.reduce((s, b) => s + (b.ks?.length || 1), 0);
 
-function heroBoard(S, blocks) {
+function weekFree(blocks) {
+  const t = today();
+  const m = monday(t);
+  const sun = addDays(m, 6);
+  return units(blocks.filter((b) => b.st === 'cancel' && b.d >= m && b.d <= sun));
+}
+
+/** Große Karte oben: nächster Ausfall mit Countdown, sonst Ruhe. */
+function hero(S, blocks) {
   const acc = S.state?.account;
   const t = today();
   const n = nowMin();
-  let label = 'Status';
-  let when = 'Nächste 7 Tage';
-  let main = 'Alles';
-  let status = 'nach Plan';
-  let footL = 'Keine Ausfälle';
-  let footR = 'in Sicht';
-  let tone = '';
-  let act = '';
+  const free = weekFree(blocks);
+  const chip = free ? `<span class="hero-chip">Diese Woche ${free} ${free === 1 ? 'Stunde' : 'Stunden'} frei</span>` : '';
   if (acc?.status === 'auth_failed') {
-    label = 'Untis';
-    when = 'Anmeldung';
-    main = 'Login';
-    status = 'erneuern';
-    footL = 'Untis lässt mich nicht rein';
-    footR = 'Hier tippen';
-    tone = 'bad';
-    act = 'data-act="relogin" role="button"';
-  } else {
-    const next = blocks.find((b) => !isPast(b, t, n) && b.st === 'cancel' && daysFromToday(b.d) <= 7);
-    if (next) {
-      const day = blocks.filter((b) => b.d === next.d);
-      const active = day.filter((b) => b.st !== 'cancel');
-      const cancels = day.filter((b) => b.st === 'cancel' && !isPast(b, t, n));
-      label = 'Nächster Ausfall';
-      when = boardDay(next.d);
-      act = `data-act="day" data-v="${next.d}" role="button"`;
-      if (!active.length) {
-        main = boardDay(next.d);
-        status = 'komplett frei';
-        footL = `Alle ${units(day)} Stunden`;
-        footR = 'fallen aus';
-      } else {
-        const first = Math.min(...active.map((b) => b.s));
-        const last = Math.max(...active.map((b) => b.e));
-        if (cancels.length > 1) {
-          main = `${units(cancels)} Stunden`;
-          status = 'fallen aus';
-          footL = [...new Set(cancels.map((b) => b.su))].join(' · ');
-          footR = cancels.some((b) => b.e <= first) ? `Start erst ${hhmm(first)}` : cancels.some((b) => b.s >= last) ? `Schluss ${hhmm(last)}` : '';
-        } else {
-          main = cut(next.sl);
-          status = 'fällt aus';
-          if (next.p) when += ' · ' + fmtPeriod(next.p, true);
-          footL = `${hhmm(next.s)}–${hhmm(next.e)}`;
-          footR = next.rep ? `dafür ${cut(next.rep.split(' · ')[0], 14)}`
-            : next.e <= first ? `Ausschlafen bis ${hhmm(first)}`
-              : next.s >= last ? `Schluss um ${hhmm(last)}`
-                : next.info ? cut(next.info, 24) : '';
-        }
-      }
-    } else {
-      const wd = weekday(t);
-      if ((wd === 6 || wd === 0 || (wd === 5 && n > 15 * 60)) && !blocks.some((b) => b.d === t && !isPast(b, t, n))) {
-        main = 'Schönes';
-        status = 'Wochenende';
-      }
-    }
+    return `<section class="hero bad" data-act="relogin" role="button">
+      <small>Untis</small><b>🔑 Anmeldung erneuern</b><p>Untis lässt Punktlandung gerade nicht rein. Tippe hier, um dich neu anzumelden.</p></section>`;
   }
-  return `<section class="board hero ${tone}" ${act}>${screws}
-    <div class="board-top"><span>${esc(label)}</span><span>${esc(when)}</span></div>
-    <div class="board-row">${flap(main, 'main')}</div>
-    <div class="board-row">${flap(status, 'status')}</div>
-    <div class="board-foot"><span>${esc(footL)}</span><span>${esc(footR)}</span></div>
-  </section>`;
+  const next = blocks.find((b) => !isPast(b, t, n) && b.st === 'cancel' && daysFromToday(b.d) <= 7);
+  if (!next) {
+    const wd = weekday(t);
+    const weekend = (wd === 6 || wd === 0 || (wd === 5 && n > 15 * 60)) && !blocks.some((b) => b.d === t && !isPast(b, t, n));
+    return `<section class="hero calm">
+      <small>Nächste 7 Tage</small><b>${weekend ? '🛋️ Schönes Wochenende' : '✅ Alles nach Plan'}</b>
+      <p>${weekend ? 'Du hörst von uns, sobald sich etwas ändert.' : 'Gerade fällt nichts aus – du erfährst es sofort, wenn doch.'}</p>${chip}</section>`;
+  }
+  const day = blocks.filter((b) => b.d === next.d);
+  const active = day.filter((b) => b.st !== 'cancel');
+  const cancels = day.filter((b) => b.st === 'cancel' && !isPast(b, t, n));
+  let title;
+  let sub;
+  if (!active.length) {
+    title = `🥳 ${boardDay(next.d)[0].toUpperCase() + boardDay(next.d).slice(1)} komplett frei`;
+    sub = `Alle ${units(day)} Stunden fallen aus`;
+  } else {
+    const first = Math.min(...active.map((b) => b.s));
+    const last = Math.max(...active.map((b) => b.e));
+    const names = [...new Set(cancels.map((b) => b.sl))].join(', ');
+    const period = cancels.length === 1 && next.p ? ` · ${fmtPeriod(next.p, true)}` : '';
+    if (cancels.every((b) => b.e <= first)) title = `😴 Ausschlafen bis ${hhmm(first)}`;
+    else if (cancels.every((b) => b.s >= last)) title = `🏃 Schluss schon um ${hhmm(last)}`;
+    else title = `🎉 ${cancels.length > 1 ? `${units(cancels)} Stunden fallen aus` : `${next.sl} fällt aus`}`;
+    sub = `${names}${period} fällt aus${next.info ? ' · ' + next.info : next.rep ? ' · dafür ' + next.rep.split(' · ')[0] : ''}`;
+  }
+  return `<section class="hero" data-act="day" data-v="${next.d}" role="button">
+    <span class="hero-cd">${esc(until(next.d, next.s))}</span>
+    <small>Nächster Ausfall · ${esc(boardDay(next.d))}</small><b>${esc(title)}</b><p>${esc(sub)}</p>${chip}</section>`;
+}
+
+/** Überlappende Stunden eines Tages nebeneinander legen. */
+function lanes(list) {
+  const out = [];
+  let cluster = [];
+  let end = -1;
+  const flush = () => {
+    const ends = [];
+    for (const it of cluster) {
+      let k = ends.findIndex((e) => e <= it.b.s);
+      if (k < 0) { k = ends.length; ends.push(0); }
+      ends[k] = it.b.e;
+      it.lane = k;
+    }
+    for (const it of cluster) { it.n = ends.length; out.push(it); }
+    cluster = [];
+  };
+  for (const it of list) {
+    if (cluster.length && it.b.s >= end) { flush(); end = -1; }
+    cluster.push(it);
+    end = Math.max(end, it.b.e);
+  }
+  if (cluster.length) flush();
+  return out;
+}
+
+const shortName = (b, view) => {
+  if (view !== 5) return b.sl;
+  const n = b.sl.replace(/\s+(LK|GK)$/i, '');
+  return n.length <= 10 ? n : b.su || n;
+};
+const BADGE = { cancel: ['Fällt aus', 'aus'], change: ['Geändert', 'neu'], exam: ['Klausur', 'Klausur'] };
+
+function lessonBlock(b, i, view, top, h, lane, n, t, nm) {
+  const now = b.d === t && b.s <= nm && b.e > nm;
+  const past = !now && isPast(b, t, nm);
+  const roomOnly = b.st === 'change' && b.notes.some((x) => x.startsWith('Raum')) && !b.notes.some((x) => x.startsWith('Vertretung'));
+  const badgeTxt = b.st === 'change' && roomOnly ? (view === 5 ? 'Raum' : 'Raum neu') : BADGE[b.st]?.[view === 5 ? 1 : 0];
+  const room = b.ro.join(', ');
+  let inner = `<span class="ls-s">${esc(shortName(b, view))}</span>`;
+  if (view === 1) {
+    inner += `<span class="ls-m">${b.p ? esc(fmtPeriod(b.p, true)) + ' · ' : ''}${hhmm(b.s)}–${hhmm(b.e)}${room ? ' · ' + esc(room) : ''}${b.te.length ? ' · ' + esc(b.te.join(', ')) : ''}</span>`;
+  } else if (room) {
+    inner += `<span class="ls-m">${esc(room)}${view === 3 && b.te.length && h > 56 ? ' · ' + esc(b.te.join(', ')) : ''}</span>`;
+  }
+  if (badgeTxt && h >= 40) inner += `<span class="ls-bd">${esc(badgeTxt)}</span>`;
+  if (view === 1) {
+    const extra = b.st === 'cancel' ? (b.rep ? `Stattdessen: ${b.rep}` : b.info || '') : [...(b.st === 'change' ? b.notes : []), b.info].filter(Boolean).join(' · ');
+    if (extra && h >= 70) inner += `<span class="ls-x">${esc(extra)}</span>`;
+  }
+  if (now) inner += `<span class="ls-now">Jetzt</span><span class="ls-prog" style="width:${Math.round(((nm - b.s) / (b.e - b.s)) * 100)}%"></span>`;
+  const w = 100 / n;
+  return `<button class="ls ${b.st} ${now ? 'cur' : ''} ${past ? 'past' : ''} ${h < 44 ? 'tight' : ''}" data-act="lesson" data-i="${i}"
+    style="--h:${hue(b.su)};top:${top}px;height:${h}px;left:calc(${w * lane}% + 1px);width:calc(${w}% - 2px)"
+    aria-label="${esc(`${b.sl}, ${hhmm(b.s)} bis ${hhmm(b.e)}${badgeTxt ? ', ' + badgeTxt : ''}`)}">${inner}</button>`;
+}
+
+function calendar(S, blocks, days) {
+  const view = S.prefs.view || 3;
+  const t = today();
+  const nm = nowMin();
+  const vis = blocks.map((b, i) => ({ b, i })).filter(({ b }) => days.includes(b.d));
+  const ref = vis.length ? vis.map((x) => x.b) : blocks;
+  if (!ref.length) {
+    return `<div class="empty"><div class="empty-ico">🎈</div><b>Kein Unterricht</b><span>In diesem Zeitraum steht nichts im Plan.</span></div>`;
+  }
+  const start = Math.floor((Math.min(...ref.map((b) => b.s)) - 5) / 15) * 15;
+  const end = Math.max(...ref.map((b) => b.e)) + 5;
+  const ppm = view === 1 ? 1.05 : view === 3 ? 0.95 : 0.85;
+  const H = Math.round((end - start) * ppm);
+  const y = (m) => Math.round((m - start) * ppm);
+
+  // Zeitachse: Beginn jeder Stunde (mit Stundennummer, wenn bekannt), nicht zu dicht
+  const marks = new Map();
+  for (const { b } of vis.length ? vis : ref.map((b) => ({ b }))) {
+    const no = String(b.p || '').split('–')[0];
+    if (!marks.has(b.s) || (!marks.get(b.s) && /^\d+$/.test(no))) marks.set(b.s, /^\d+$/.test(no) ? no : '');
+  }
+  let lastY = -99;
+  const axis = [];
+  const lines = [];
+  for (const [m, no] of [...marks].sort((a, b) => a[0] - b[0])) {
+    const yy = y(m);
+    lines.push(`<i style="top:${yy}px"></i>`);
+    if (yy - lastY < 24) continue;
+    lastY = yy;
+    axis.push(`<span class="ax" style="top:${yy}px">${no ? `<b>${esc(no)}</b>` : ''}${hhmm(m)}</span>`);
+  }
+  const showNow = days.includes(t) && nm >= start && nm <= end;
+  if (showNow) axis.push(`<span class="ax-now" style="top:${y(nm)}px">${hhmm(nm)}</span>`);
+
+  const head = days.map((d) => {
+    const dt = parseDay(d);
+    const isT = d === t;
+    const free = blocks.some((b) => b.d === d) && !blocks.some((b) => b.d === d && b.st !== 'cancel');
+    return `<button class="ch ${isT ? 'today' : ''} ${d < t ? 'past' : ''}" ${view === 1 ? 'tabindex="-1"' : `data-act="dayOne" data-v="${d}"`}>
+      <span>${view === 1 ? WD_LONG[dt.getDay()] : WD[dt.getDay()]}</span><b>${dt.getDate()}</b>${free ? '<em>frei</em>' : ''}</button>`;
+  }).join('');
+
+  const cols = days.map((d) => {
+    const list = lanes(vis.filter(({ b }) => b.d === d));
+    const items = list.map(({ b, i, lane, n }) => {
+      const top = y(b.s);
+      const h = Math.max(view === 5 ? 30 : 34, y(b.e) - top - 3);
+      return lessonBlock(b, i, view, top, h, lane, n, t, nm);
+    }).join('');
+    const nowLine = showNow && d === t ? `<i class="nowline" style="top:${y(nm)}px"></i>` : '';
+    const empty = list.length ? '' : `<span class="col-empty">${weekday(d) % 6 ? 'frei' : 'Wochenende'}</span>`;
+    return `<div class="col ${d === t ? 'today' : ''}">${nowLine}${empty}${items}</div>`;
+  }).join('');
+
+  return `<div class="cal v${view}" style="--n:${days.length}">
+    <div class="cal-head"><span></span>${head}</div>
+    <div class="cal-body" style="height:${H}px">
+      <div class="axis">${axis.join('')}</div>
+      <div class="grid-lines" aria-hidden="true">${lines.join('')}</div>
+      <div class="cols">${cols}</div>
+    </div>
+  </div>`;
 }
 
 function plan(S) {
   const blocks = S.state?.snapshot?.blocks || [];
   const name = firstName(S);
-  const t = today();
-  const sel = defaultDay(S);
-  const greet = name ? `Hey ${esc(name)} 👋` : 'Hey 👋';
-  return `<header class="top">${wordmark()}${liveChip(S)}</header>
-    <p class="greet">${greet} · ${esc(dateLong(t))}</p>
-    ${S.state ? heroBoard(S, blocks) : '<div class="board hero skel"></div>'}
-    ${S.state ? tiles(blocks) : '<div class="tiles"><div class="tile skel"></div><div class="tile skel"></div></div>'}
-    ${S.state ? dayChips(S, blocks, sel) : ''}
-    ${S.state ? dayView(S, blocks, sel) : '<div class="lessons"><div class="ticket skel"></div><div class="ticket skel"></div><div class="ticket skel"></div></div>'}`;
+  const t = parseDay(today());
+  const view = S.prefs.view || 3;
+  const head = `<header class="top">${wordmark()}${liveChip(S)}</header>
+    <p class="greet">${name ? `Hey ${esc(name)} 👋` : 'Hey 👋'}</p>
+    <h1 class="title">${WD_LONG[t.getDay()]}, ${t.getDate()}. <span>${MON[t.getMonth()]}</span></h1>`;
+  if (!S.state) {
+    return `${head}<div class="hero skel"></div><div class="seg view-seg"></div><div class="cal skel" style="height:360px"></div>`;
+  }
+  const { days } = visibleDays(S);
+  const canPrev = stepDay(S, -1) && stepDay(S, -1) !== days[0];
+  const canNext = !!stepDay(S, 1);
+  return `${head}
+    ${hero(S, blocks)}
+    <div class="seg view-seg" role="tablist">${[[1, '1 Tag'], [3, '3 Tage'], [5, 'Woche']].map(([k, l]) => `<button role="tab" class="${view === k ? 'on' : ''}" data-act="view" data-v="${k}" aria-selected="${view === k}">${l}</button>`).join('')}</div>
+    <div class="cal-nav">
+      <button class="icon-btn ghost" data-act="step" data-v="-1" aria-label="Zurück" ${canPrev ? '' : 'disabled'}>${icon('left')}</button>
+      <b>${rangeLabel(days, view)}</b>
+      <button class="icon-btn ghost" data-act="step" data-v="1" aria-label="Weiter" ${canNext ? '' : 'disabled'}>${icon('right')}</button>
+    </div>
+    ${calendar(S, blocks, days)}`;
 }
+
+// ---------------------------------------------------------------- Noten
+
+function ring(r) {
+  const C = 2 * Math.PI * 42;
+  const frac = r ? Math.max(0.02, Math.min(1, r.total / 900)) : 0;
+  return `<svg class="ring" width="112" height="112" viewBox="0 0 112 112" aria-hidden="true">
+    <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--g1)"/><stop offset=".55" stop-color="var(--g2)"/><stop offset="1" stop-color="var(--g3)"/></linearGradient></defs>
+    <circle cx="56" cy="56" r="42" fill="none" stroke="var(--card-2)" stroke-width="12"/>
+    <circle cx="56" cy="56" r="42" fill="none" stroke="url(#ringGrad)" stroke-width="12" stroke-linecap="round"
+      stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 56 56)"/>
+    <text x="56" y="61" text-anchor="middle" class="ring-val">${r ? (r.note != null ? fmt1(r.note) : '–') : '–'}</text>
+    <text x="56" y="78" text-anchor="middle" class="ring-lbl">${r && r.est ? 'GESCHÄTZT' : 'SCHNITT'}</text>
+  </svg>`;
+}
+
+function noten(S) {
+  const G = S.grades;
+  const r = abi(G);
+  const cur = currentHj(G.abiYear);
+  const head = `<header class="top">${wordmark()}<button class="live" data-act="abiYear" aria-label="Abiturjahr ändern"><span>Abi ${G.abiYear} · NRW</span></button></header>
+    <h1 class="title">Noten</h1>`;
+  if (!G.subjects.length) {
+    return `${head}<div class="empty big"><div class="empty-ico">📚</div><b>Noch keine Fächer</b>
+      <span>Sobald dein Stundenplan geladen ist, übernehmen wir deine Fächer automatisch. Du kannst sie auch selbst anlegen.</span>
+      <button class="btn" data-act="addSubject">Fach hinzufügen</button></div>`;
+  }
+  let hint = '';
+  if (!G.subjects.some((s) => s.lk) || G.subjects.filter((s) => s.abi > 0).length < 4) {
+    hint = `<button class="tip" data-act="subject" data-v="${G.subjects[0].id}">${icon('spark')}<span><b>Kurz einrichten</b>Tippe auf ein Fach und markiere deine 2 Leistungskurse und 4 Abifächer – dann stimmt die Hochrechnung.</span></button>`;
+  }
+  const summary = r ? `
+    <section class="card abi">
+      ${ring(r)}
+      <div class="abi-txt">
+        <small>Abi-Schnitt · Hochrechnung</small>
+        <b>${r.total}<span> / 900 P.</span></b>
+        <p>${!r.passed ? 'So noch nicht bestanden – mind. 300 Punkte nötig.' : r.est ? `Noch offen: ${r.hjs < 4 ? HJ.slice(r.hjs).join(', ') + (r.examsMissing ? ' und die Prüfungen' : '') : 'die Prüfungen'}` : 'Alles eingetragen.'}</p>
+      </div>
+      <div class="abi-blocks"><span>Block I<b>${r.block1}<i>/600</i></b></span><span>Block II<b>${r.block2}<i>/300</i></b></span>${r.deficits ? `<span class="warn">Unterkurse<b>${r.deficits}</b></span>` : ''}</div>
+    </section>` : `
+    <section class="card abi empty-abi">${ring(null)}<div class="abi-txt"><small>Abi-Schnitt</small><b>Noch leer</b><p>Trag deine ersten Punkte ein – der Schnitt rechnet sich dann von selbst.</p></div></section>`;
+  const rows = G.subjects.map((s) => {
+    const a = subjectAvg(G, s.id);
+    const tag = [s.lk ? 'LK' : '', s.abi ? `Abi ${s.abi}` : ''].filter(Boolean).join(' · ');
+    const cells = HJ.map((_, hj) => {
+      const res = hjResult(G, s.id, hj);
+      return res ? `<span class="pt ${tone(res.pts)} ${res.est ? 'est' : ''} ${hj === cur ? 'cur' : ''}">${res.pts}</span>` : `<span class="pt none ${hj === cur ? 'cur' : ''}">·</span>`;
+    }).join('');
+    return `<button class="subj" data-act="subject" data-v="${s.id}">
+      <span class="sn"><i style="--h:${hue(s.su)}"></i><span><b>${esc(s.name)}</b>${tag ? `<small>${tag}</small>` : ''}</span></span>
+      ${cells}<span class="avg">${a == null ? '–' : fmt1(a)}</span></button>`;
+  }).join('');
+  return `${head}${hint}${summary}
+    <section class="card subjects">
+      <div class="subj head"><span class="sn">Fach</span>${HJ.map((h, i) => `<span class="${i === cur ? 'cur' : ''}">${h}</span>`).join('')}<span class="avg">Ø</span></div>
+      ${rows}
+    </section>
+    <button class="btn" data-act="addGrade">${icon('plus')}Note eintragen</button>
+    <p class="fine center">Deine Noten bleiben nur auf diesem Handy. Hochrechnung nach APO-GOSt NRW, vereinfacht – ohne Gewähr.</p>`;
+}
+
+export function subjectSheet(G, sid) {
+  const s = G.subjects.find((x) => x.id === sid);
+  if (!s) return '';
+  const cur = currentHj(G.abiYear);
+  const hjs = HJ.map((h, hj) => {
+    const es = G.entries.filter((e) => e.sid === sid && e.hj === hj);
+    const res = hjResult(G, sid, hj);
+    return `<div class="hj ${hj === cur ? 'cur' : ''}">
+      <div class="hj-h"><b>${h}${hj === cur ? ' <em>jetzt</em>' : ''}</b>${res ? `<span class="pt ${tone(res.pts)}">${res.pts}</span><small>${res.est ? 'geschätzt' : 'Zeugnis'}</small>` : '<small>noch nichts</small>'}
+        <button class="mini" data-act="addGrade" data-sid="${sid}" data-hj="${hj}" aria-label="Note in ${h} eintragen">${icon('plus')}</button></div>
+      ${es.map((e) => `<div class="entry"><span>${KIND[e.kind]}</span><b class="${tone(e.pts)}">${e.pts} P. <small>(${noteOf(e.pts)})</small></b>
+        <button class="x" data-act="delGrade" data-v="${e.id}" aria-label="Löschen">${icon('x')}</button></div>`).join('')}
+    </div>`;
+  }).join('');
+  const ex = G.exams?.[sid];
+  return `<div class="sheet-body" style="--h:${hue(s.su)}">
+    <h3 class="sheet-title"><i class="subj-dot"></i>${esc(s.name)}</h3>
+    <div class="seg small"><button class="${!s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="0">Grundkurs</button><button class="${s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="1">Leistungskurs</button></div>
+    <div class="field-row"><span>Abiturfach</span><div class="chips">${[0, 1, 2, 3, 4].map((n) => `<button class="chip ${s.abi === n ? 'on' : ''}" data-act="setAbi" data-sid="${sid}" data-v="${n}">${n ? n + '.' : 'nein'}</button>`).join('')}</div></div>
+    ${s.abi ? `<div class="field-row"><span>Abiturprüfung</span>${ex != null ? `<b class="pt ${tone(ex)}">${ex}</b><button class="mini" data-act="delExam" data-sid="${sid}">Löschen</button>` : `<button class="mini acc" data-act="addGrade" data-sid="${sid}" data-hj="abi">Punkte eintragen</button>`}</div>` : ''}
+    <div class="hjs">${hjs}</div>
+    <button class="btn soft" data-act="closeSheet">Fertig</button>
+    <button class="btn link" data-act="delSubject" data-v="${sid}">${S_CONFIRM === sid ? 'Wirklich entfernen? Nochmal tippen' : 'Fach entfernen'}</button>
+  </div>`;
+}
+let S_CONFIRM = null;
+export const confirmDelete = (sid) => { S_CONFIRM = sid; };
+
+export function addSheet(G, A) {
+  const sub = G.subjects.find((s) => s.id === A.sid) || G.subjects[0];
+  const isAbi = A.hj === 'abi';
+  const hjBtns = HJ.map((h, i) => `<button class="${A.hj === i ? 'on' : ''}" data-act="addSet" data-k="hj" data-v="${i}">${h}</button>`).join('')
+    + (sub?.abi ? `<button class="${isAbi ? 'on' : ''}" data-act="addSet" data-k="hj" data-v="abi">Abi</button>` : '');
+  return `<div class="sheet-body">
+    <h3 class="sheet-title">Note eintragen</h3>
+    <div class="chips subj-chips">${G.subjects.map((s) => `<button class="chip ${s.id === sub?.id ? 'on' : ''}" style="--h:${hue(s.su)}" data-act="addSet" data-k="sid" data-v="${s.id}"><i></i>${esc(s.name)}</button>`).join('')}</div>
+    <div class="seg small">${hjBtns}</div>
+    ${isAbi ? '<p class="muted small-note">Punkte deiner Abiturprüfung in diesem Fach.</p>' : `<div class="seg small">${Object.entries(KIND).map(([k, l]) => `<button class="${A.kind === k ? 'on' : ''}" data-act="addSet" data-k="kind" data-v="${k}">${l}</button>`).join('')}</div>`}
+    <div class="pts-grid">${Array.from({ length: 16 }, (_, i) => 15 - i).map((p) => `<button class="pbtn ${tone(p)}" data-act="saveGrade" data-v="${p}"><b>${p}</b><small>${noteOf(p)}</small></button>`).join('')}</div>
+    <button class="btn link" data-act="closeSheet">Abbrechen</button>
+  </div>`;
+}
+
+export function newSubjectSheet() {
+  return `<div class="sheet-body">
+    <h3 class="sheet-title">Fach hinzufügen</h3>
+    <form class="form" data-submit="saveSubject">
+      <label class="field"><span>Name</span><input class="input" name="name" maxlength="40" placeholder="z. B. Physik" required autocomplete="off"></label>
+      <button class="btn" type="submit">Hinzufügen</button>
+    </form>
+    <button class="btn link" data-act="closeSheet">Abbrechen</button>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Verlauf
 
 function eventIcon(ev) {
   const m = /^(\p{Extended_Pictographic}️?)\s*/u.exec(ev.title || '');
@@ -453,7 +622,7 @@ function history(S) {
       return `<h4 class="group-label">${esc(label)}</h4>${evs.map((ev) => {
         const [emo, title] = eventIcon(ev);
         const tm = new Date(ev.at);
-        return `<article class="event ${esc(ev.kind)}" ${ev.date ? `data-act="day" data-v="${esc(String(ev.date).slice(0, 10))}" role="button"` : ''}>
+        return `<article class="event ${esc(ev.kind)}" ${ev.date ? `data-act="dayOne" data-v="${esc(String(ev.date).slice(0, 10))}" role="button"` : ''}>
           <span class="emo">${emo}</span>
           <div><b>${esc(title)}</b>${ev.body ? `<p>${esc(ev.body)}</p>` : ''}
           <time>${String(tm.getHours()).padStart(2, '0')}:${String(tm.getMinutes()).padStart(2, '0')} Uhr${ev.sent ? ' · aufs Handy geschickt' : ''}</time></div>
@@ -461,12 +630,18 @@ function history(S) {
       }).join('')}`;
     }).join('');
   }
-  return `<header class="page-head"><h2>Verlauf</h2><p>Alles, was Punktlandung dir gemeldet hat.</p></header>${body}`;
+  return `<header class="top">${wordmark()}</header><h1 class="title">Verlauf</h1><p class="page-sub">Alles, was Punktlandung dir gemeldet hat.</p>${body}`;
 }
 
-const ACCENTS = [
-  ['lime', 'Limette', '#C8F560'], ['mint', 'Minze', '#6FF0C6'], ['sky', 'Himmel', '#84C5FF'],
-  ['lilac', 'Flieder', '#C6B3FF'], ['sun', 'Sonne', '#FFD34D'], ['pink', 'Pink', '#FF9BD2'],
+// ---------------------------------------------------------------- Ich
+
+export const ACCENTS = [
+  ['koralle', 'Koralle', 'linear-gradient(135deg,#FF4D4D,#E8337E,#B13CE0)'],
+  ['blau', 'Blau', 'linear-gradient(135deg,#3D7BFF,#5B5CF0,#9B4DFF)'],
+  ['gruen', 'Grün', 'linear-gradient(135deg,#10B981,#0EA5A5,#2F7FD8)'],
+  ['lila', 'Lila', 'linear-gradient(135deg,#8B5CF6,#C026D3,#F43F5E)'],
+  ['sonne', 'Sonne', 'linear-gradient(135deg,#FFB020,#FF7A1A,#F0443A)'],
+  ['pink', 'Pink', 'linear-gradient(135deg,#FF5FA2,#E8337E,#8B5CF6)'],
 ];
 
 function pushRow(S) {
@@ -493,20 +668,15 @@ function me(S) {
   const initials = name.trim().slice(0, 1).toUpperCase();
   const set = acc.settings || {};
   const p = S.prefs;
+  const pushOk = !!S.state?.device?.push && permission() === 'granted';
   const statusTxt = acc.status === 'auth_failed' ? `<span class="bad">Anmeldung klappt nicht: ${esc(acc.lastError || '')}</span>`
     : acc.status === 'error' ? `<span class="bad">Störung: ${esc(acc.lastError || 'Untis nicht erreichbar')}</span>`
       : `Zuletzt geprüft ${esc(ago(acc.lastCheckAt))}`;
-  return `<header class="page-head"><h2>Ich</h2></header>
-    <div class="ticket pass">
-      <span class="tk-main">
-        <span class="avatar">${esc(initials)}</span>
-        <span class="tk-body">
-          <small class="pass-label">Bordkarte · Punktlandung</small>
-          <span class="pass-name">${esc(name)}</span>
-          <span class="tk-meta">${esc(acc.schoolName || '')}</span>
-        </span>
-      </span>
-      <span class="tk-stub"><small>Klasse</small><b>${esc(acc.className || '–')}</b></span>
+  return `<header class="top">${wordmark()}</header><h1 class="title">Ich</h1>
+    <div class="profile">
+      <span class="avatar">${esc(initials)}</span>
+      <span class="pr-txt"><b>${esc(name)}</b><small>${esc(acc.schoolName || '')}</small></span>
+      ${acc.className ? `<span class="pr-class"><small>Klasse</small><b>${esc(acc.className)}</b></span>` : ''}
     </div>
 
     <h4 class="section-title">Mitteilungen</h4>
@@ -514,7 +684,7 @@ function me(S) {
       ${pushRow(S)}
       <label class="row"><span class="label">„Doch Unterricht“ melden<small>Wenn ein Ausfall zurückgenommen wird</small></span>
         <input type="checkbox" class="switch" data-act="toggleRestore" ${set.restore !== false ? 'checked' : ''}></label>
-      ${S.state?.device?.push ? `<button class="row link" data-act="test" ${S.busy.test ? 'disabled' : ''}><span class="r-ico">${icon('send')}</span><span class="label">Test-Nachricht schicken</span>${icon('right', 'chev')}</button>` : ''}
+      ${pushOk ? `<button class="row link" data-act="test" ${S.busy.test ? 'disabled' : ''}><span class="r-ico">${icon('send')}</span><span class="label">Test-Nachricht schicken</span>${icon('right', 'chev')}</button>` : ''}
     </div>
 
     <h4 class="section-title">Untis</h4>
@@ -540,7 +710,7 @@ function me(S) {
       <details class="row"><summary><span class="r-ico">${icon('info')}</span><span class="label">So funktioniert’s</span>${icon('right', 'chev')}</summary>
         <p>Tagsüber (5:30–22 Uhr) schaut Punktlandung alle 2 Minuten in deinen Untis-Stundenplan, nachts alle 15 Minuten. Ist eine Stunde neu als Ausfall eingetragen, bekommst du sofort eine Mitteilung – auch wenn die App zu ist. Wird ein Ausfall zurückgenommen, sagen wir dir das auch.</p></details>
       <details class="row"><summary><span class="r-ico">${icon('lock')}</span><span class="label">Datenschutz</span>${icon('right', 'chev')}</summary>
-        <p>Gespeichert werden nur: deine Schule, dein Untis-Benutzername und dein Passwort bzw. Schlüssel (verschlüsselt), dein Stundenplan der nächsten zwei Wochen und die Mitteilungen der letzten 90 Tage – auf einem Server in der EU. Nichts davon wird weitergegeben. „Abmelden & löschen“ entfernt alles sofort.</p></details>
+        <p>Gespeichert werden nur: deine Schule, dein Untis-Benutzername und dein Passwort bzw. Schlüssel (verschlüsselt), dein Stundenplan der nächsten zwei Wochen und die Mitteilungen der letzten 90 Tage – auf einem Server in der EU. Nichts davon wird weitergegeben. Deine Noten verlassen dein Handy nie. „Abmelden & löschen“ entfernt alles auf dem Server sofort.</p></details>
       <div class="row"><span class="label">Version ${VERSION}<small>Kein offizielles Produkt der Untis GmbH.</small></span></div>
     </div>
 
@@ -551,8 +721,8 @@ function me(S) {
 export function main(S) {
   const tab = S.tab;
   const unseen = (S.state?.events || []).filter((e) => e.id > (S.lastSeenEvent || 0) && e.kind !== 'test').length;
-  const content = tab === 'verlauf' ? history(S) : tab === 'ich' ? me(S) : plan(S);
-  const tabs = [['plan', 'plan', 'Plan'], ['verlauf', 'bell', 'Verlauf'], ['ich', 'user', 'Ich']];
+  const content = tab === 'verlauf' ? history(S) : tab === 'ich' ? me(S) : tab === 'noten' ? noten(S) : plan(S);
+  const tabs = [['plan', 'plan', 'Plan'], ['noten', 'grade', 'Noten'], ['verlauf', 'bell', 'Verlauf'], ['ich', 'user', 'Ich']];
   return `<main class="screen screen-${tab}">${content}</main>
     <nav class="tabbar" aria-label="Bereiche">${tabs.map(([k, ic, label]) => `
       <button class="tab ${tab === k ? 'on' : ''}" data-act="tab" data-v="${k}" aria-current="${tab === k ? 'page' : 'false'}" aria-label="${label}">
@@ -563,7 +733,7 @@ export function main(S) {
 
 export function lessonSheet(b) {
   const rows = [
-    ['Zeit', `${b.p ? esc(fmtPeriod(b.p)) + ' · ' : ''}${hhmm(b.s)}–${hhmm(b.e)} Uhr`],
+    ['Zeit', `${b.p ? esc(fmtPeriod(b.p)) + '<br>' : ''}${hhmm(b.s)}–${hhmm(b.e)} Uhr`],
     b.ro.length ? ['Raum', esc(b.ro.join(', '))] : null,
     b.te.length ? ['Lehrkraft', esc(b.te.join(', '))] : null,
     b.kl.length ? ['Klasse/Kurs', esc(b.kl.join(', '))] : null,
@@ -587,7 +757,7 @@ export function lessonSheet(b) {
 export function confirmLogoutSheet() {
   return `<div class="sheet-body">
     <h3 class="sheet-title">Wirklich abmelden?</h3>
-    <p class="muted">Deine Untis-Zugangsdaten, dein gespeicherter Plan und der Verlauf werden sofort vom Server gelöscht. Du bekommst dann keine Mitteilungen mehr.</p>
+    <p class="muted">Deine Untis-Zugangsdaten, dein gespeicherter Plan und der Verlauf werden sofort vom Server gelöscht. Du bekommst dann keine Mitteilungen mehr. Deine Noten bleiben auf diesem Handy.</p>
     <button class="btn danger solid" data-act="logoutConfirm">Ja, abmelden & löschen</button>
     <button class="btn soft" data-act="closeSheet">Abbrechen</button>
   </div>`;

@@ -4,8 +4,9 @@ import {
   today, nowMin,
 } from './lib.js';
 import * as V from './views.js';
-import { toast, confetti, openSheet, closeSheet, haptic, runFlaps, resetFlaps, flapTo } from './ui.js';
-import { demoState } from './demo.js';
+import { toast, confetti, openSheet, updateSheet, closeSheet, haptic, runFlaps, resetFlaps, flapTo } from './ui.js';
+import { demoState, demoGrades } from './demo.js';
+import * as G from './grades.js';
 
 const root = document.getElementById('app');
 
@@ -17,6 +18,8 @@ const S = {
   day: null,
   busy: {},
   lastSeenEvent: store.lastSeenEvent,
+  grades: store.grades || G.empty(),
+  add: { sid: null, hj: 0, kind: 'k' },
   ob: { step: 'welcome', query: '', results: [], tooMany: false, searching: false, searchError: '', school: null, mode: 'password', busy: false, error: '', draft: {}, nameGuess: '' },
 };
 window.__pl = S; // für die Fehlersuche
@@ -31,6 +34,7 @@ function render() {
     resetFlaps();
     clearInterval(S._wTimer);
   }
+  if (S.screen === 'main' && S.tab === 'noten') ensureSubjects();
   root.innerHTML = S.screen === 'ob' ? V.onboarding(S) : S.screen === 'main' ? V.main(S) : V.loading();
   root.classList.toggle('enter', changed);
   root.classList.toggle('day-enter', !changed && !!S._dayChanged);
@@ -47,12 +51,9 @@ function render() {
 
 function afterRender(changed) {
   runFlaps(root);
-  const sel = root.querySelector('.day.sel');
-  if (sel) {
-    const strip = root.querySelector('#days');
-    const target = sel.offsetLeft - strip.clientWidth / 2 + sel.clientWidth / 2;
-    if (changed || S._scrollDays) strip.scrollTo({ left: target, behavior: changed ? 'auto' : 'smooth' });
-    S._scrollDays = false;
+  if (S._calAnim) {
+    root.querySelector('.cal')?.animate([{ opacity: 0, transform: `translateX(${S._calAnim * 18}px)` }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.9,.25,1)' });
+    S._calAnim = 0;
   }
   if (S.screen === 'main' && S.tab === 'verlauf') markEventsSeen();
 }
@@ -142,7 +143,7 @@ function applyPrefs() {
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
   const m = document.createElement('meta');
   m.name = 'theme-color';
-  m.content = dark ? '#0D0D11' : '#F4F2ED';
+  m.content = dark ? '#0C0D12' : '#F3F4F8';
   document.head.appendChild(m);
 }
 
@@ -283,6 +284,56 @@ function guessName(st, user) {
   return u ? u[0].toUpperCase() + u.slice(1).toLowerCase() : '';
 }
 
+// ---------- Kalender & Noten ----------
+function stepCal(dir) {
+  const d = V.stepDay(S, dir);
+  if (!d || (dir < 0 && d === V.visibleDays(S).days[0])) return;
+  S.day = d;
+  S._calAnim = dir;
+  haptic(5);
+  render();
+}
+
+function saveGrades() {
+  if (!S.demo) store.grades = S.grades;
+}
+
+/** Fächer beim ersten Öffnen aus dem Stundenplan übernehmen. */
+function ensureSubjects() {
+  if (S.grades.subjects.length || S.grades._seeded) return;
+  const subs = G.subjectsFromBlocks(S.state?.snapshot?.blocks);
+  if (!subs.length) return;
+  S.grades.subjects = subs;
+  S.grades._seeded = true;
+  saveGrades();
+}
+
+function patchSubject(sid, patch) {
+  const s = S.grades.subjects.find((x) => x.id === sid);
+  if (!s) return;
+  Object.assign(s, patch);
+  saveGrades();
+  refreshGradeViews();
+}
+
+function refreshGradeViews() {
+  if (S._openSubject && document.querySelector('.sheet')) updateSheet(V.subjectSheet(S.grades, S._openSubject));
+  if (S.screen === 'main' && S.tab === 'noten') render();
+}
+
+// Wischen im Kalender blättert vor und zurück.
+let touch = null;
+document.addEventListener('touchstart', (e) => {
+  touch = e.target.closest('.cal-body') && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (!touch) return;
+  const dx = e.changedTouches[0].clientX - touch.x;
+  const dy = e.changedTouches[0].clientY - touch.y;
+  touch = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.6) stepCal(dx < 0 ? 1 : -1);
+}, { passive: true });
+
 // ---------- Aktionen ----------
 const actions = {
   start() {
@@ -381,15 +432,124 @@ const actions = {
   },
   tab(el) {
     S.tab = el.dataset.v;
+    if (S.tab === 'noten') ensureSubjects();
     haptic(5);
     render();
   },
   day(el) {
-    S._dayChanged = S.day !== el.dataset.v;
     S.day = el.dataset.v;
     if (S.tab !== 'plan') S.tab = 'plan';
-    S._scrollDays = true;
+    S._calAnim = 1;
     haptic(5);
+    render();
+  },
+  dayOne(el) {
+    S.day = el.dataset.v;
+    S.tab = 'plan';
+    savePrefs({ view: 1 });
+    S._calAnim = 1;
+    haptic(5);
+    render();
+  },
+  view(el) {
+    const v = Number(el.dataset.v);
+    if (v === S.prefs.view) return;
+    const vis = V.visibleDays(S).days;
+    const pref = V.defaultDay({ ...S, day: null });
+    S.day = vis.includes(pref) ? pref : vis.includes(S.day) ? S.day : vis[0];
+    savePrefs({ view: v });
+    S._calAnim = 1;
+    haptic(5);
+    render();
+  },
+  step(el) { stepCal(Number(el.dataset.v)); },
+
+  // ---------- Noten ----------
+  abiYear() {
+    const y0 = G.defaultAbiYear();
+    const opts = [y0 - 1, y0, y0 + 1, y0 + 2];
+    const i = opts.indexOf(S.grades.abiYear);
+    S.grades.abiYear = opts[(i + 1) % opts.length];
+    saveGrades();
+    toast(`Abiturjahr ${S.grades.abiYear} – jetzt ${G.currentHj(S.grades.abiYear) < 0 ? 'noch vor der Q1' : G.HJ[G.currentHj(S.grades.abiYear)]}`);
+    render();
+  },
+  subject(el) {
+    V.confirmDelete(null);
+    S._openSubject = el.dataset.v;
+    openSheet(V.subjectSheet(S.grades, el.dataset.v), { onClose: () => { S._openSubject = null; } });
+  },
+  setLk(el) { patchSubject(el.dataset.sid, { lk: el.dataset.v === '1' }); },
+  setAbi(el) {
+    const n = Number(el.dataset.v);
+    if (n) for (const s of S.grades.subjects) if (s.abi === n && s.id !== el.dataset.sid) s.abi = 0;
+    patchSubject(el.dataset.sid, { abi: n });
+  },
+  delExam(el) {
+    delete S.grades.exams[el.dataset.sid];
+    saveGrades();
+    refreshGradeViews();
+  },
+  delGrade(el) {
+    S.grades.entries = S.grades.entries.filter((e) => e.id !== el.dataset.v);
+    saveGrades();
+    refreshGradeViews();
+  },
+  delSubject(el) {
+    const sid = el.dataset.v;
+    if (S._confirmDel !== sid) {
+      S._confirmDel = sid;
+      V.confirmDelete(sid);
+      return refreshGradeViews();
+    }
+    S._confirmDel = null;
+    V.confirmDelete(null);
+    S.grades.subjects = S.grades.subjects.filter((s) => s.id !== sid);
+    S.grades.entries = S.grades.entries.filter((e) => e.sid !== sid);
+    delete S.grades.exams[sid];
+    saveGrades();
+    closeSheet();
+    render();
+  },
+  addGrade(el) {
+    if (!S.grades.subjects.length) return actions.addSubject();
+    const cur = G.currentHj(S.grades.abiYear);
+    const hj = el?.dataset.hj === 'abi' ? 'abi' : el?.dataset.hj != null ? Number(el.dataset.hj) : Math.max(0, cur);
+    S.add = { sid: el?.dataset.sid || S.add.sid || S.grades.subjects[0].id, hj, kind: S.add.kind || 'k' };
+    if (!S.grades.subjects.some((s) => s.id === S.add.sid)) S.add.sid = S.grades.subjects[0].id;
+    S._fromSubject = el?.dataset.sid || null;
+    openSheet(V.addSheet(S.grades, S.add));
+  },
+  addSet(el) {
+    const k = el.dataset.k;
+    const v = el.dataset.v;
+    S.add[k] = k === 'hj' ? (v === 'abi' ? 'abi' : Number(v)) : v;
+    if (k === 'sid' && S.add.hj === 'abi' && !S.grades.subjects.find((s) => s.id === v)?.abi) S.add.hj = Math.max(0, G.currentHj(S.grades.abiYear));
+    updateSheet(V.addSheet(S.grades, S.add));
+  },
+  saveGrade(el) {
+    const pts = Number(el.dataset.v);
+    const sub = S.grades.subjects.find((s) => s.id === S.add.sid);
+    if (!sub) return;
+    if (S.add.hj === 'abi') S.grades.exams[sub.id] = pts;
+    else S.grades.entries.push({ id: G.uid(), sid: sub.id, hj: S.add.hj, kind: S.add.kind, pts, at: today() });
+    saveGrades();
+    haptic(12);
+    toast(`${sub.name}: ${pts} ${pts === 1 ? 'Punkt' : 'Punkte'} ${S.add.hj === 'abi' ? '(Abi)' : '· ' + G.KIND[S.add.kind]}`);
+    if (pts >= 14) setTimeout(() => confetti({ y: 0.5, count: 90 }), 120);
+    if (S._fromSubject) {
+      openSheet(V.subjectSheet(S.grades, S._fromSubject), { onClose: () => { S._openSubject = null; } });
+      S._openSubject = S._fromSubject;
+    } else closeSheet();
+    render();
+  },
+  addSubject() { openSheet(V.newSubjectSheet()); setTimeout(() => document.querySelector('.sheet input[name="name"]')?.focus(), 350); },
+  saveSubject(form) {
+    const name = String(new FormData(form).get('name') || '').trim();
+    if (!name) return;
+    S.grades.subjects.push({ id: G.uid(), name, su: name.slice(0, 3).toUpperCase(), lk: false, abi: 0 });
+    saveGrades();
+    closeSheet();
     render();
   },
   lesson(el) {
@@ -504,8 +664,8 @@ function openFromUrl(url) {
     if (u.searchParams.has('d')) {
       S.day = u.searchParams.get('d');
       S.tab = 'plan';
-      S._scrollDays = true;
     } else if (u.searchParams.has('ich')) S.tab = 'ich';
+    else if (u.searchParams.has('noten')) S.tab = 'noten';
   } catch { /* egal */ }
 }
 
@@ -531,6 +691,7 @@ async function boot() {
   if (demo) {
     S.demo = true;
     S.state = demoState();
+    S.grades = demoGrades(S.state);
     S.prefs = { ...S.prefs, nick: S.prefs.nick || 'Emil' };
     S.screen = 'main';
     render();

@@ -25,6 +25,8 @@ const P = {
   spark: '<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
   moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  grade: '<path d="M5 20V11M12 20V5M19 20v-6"/>',
 };
 
 export const icon = (name, cls = '') =>
@@ -146,6 +148,16 @@ export function openSheet(html, { onClose } = {}) {
     if (y0 != null && dy > 90) closeSheet();
     y0 = null;
   });
+  return sh;
+}
+
+/** Inhalt des offenen Blatts austauschen (ohne neu aufzuklappen). */
+export function updateSheet(html) {
+  const sh = document.querySelector('.sheet');
+  if (!sh) return openSheet(html);
+  const top = sh.scrollTop;
+  sh.innerHTML = `<div class="grab" aria-hidden="true"></div>${html}`;
+  sh.scrollTop = top;
   return sh;
 }
 

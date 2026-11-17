@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Punktlandung</title>
 <meta name="description" content="Sofort wissen, wenn eine Stunde ausfällt – Mitteilungen für deinen Untis-Stundenplan.">
-<meta name="theme-color" content="#0D0D11" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#F4F2ED" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C0D12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F3F4F8" media="(prefers-color-scheme: light)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Punktlandung">
@@ -24,7 +24,8 @@
   try {
     var p = JSON.parse(localStorage.getItem('pl.prefs') || '{}');
     if (p.theme && p.theme !== 'auto') document.documentElement.dataset.theme = p.theme;
-    document.documentElement.dataset.accent = p.accent || 'lime';
+    var old = { lime: 'koralle', mint: 'gruen', sky: 'blau', lilac: 'lila', sun: 'sonne' };
+    document.documentElement.dataset.accent = old[p.accent] || p.accent || 'koralle';
   } catch (e) {}
 </script>
 </head>

@@ -1,7 +1,7 @@
 // Punktlandung – Grundlagen: Speicher, Server-Anbindung, Mitteilungen, Zeit.
 
 export const API = 'https://ahgjcjkbkvkyedztyory.supabase.co/functions/v1/punktlandung';
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 // ---------- Speicher (lokal auf dem Gerät) ----------
 const read = (k, fb) => {
@@ -40,15 +40,24 @@ async function idbPut(key, value) {
   } catch { /* egal */ }
 }
 
+// Farben aus Version 1.0 auf die neuen Namen abbilden.
+const OLD_ACCENT = { lime: 'koralle', mint: 'gruen', sky: 'blau', lilac: 'lila', sun: 'sonne' };
+
 export const store = {
   get token() { return read('pl.token', null); },
   set token(v) { write('pl.token', v); idbPut('token', v); },
   get state() { return read('pl.state', null); },
   set state(v) { write('pl.state', v); },
-  get prefs() { return { theme: 'auto', accent: 'lime', nick: '', ...read('pl.prefs', {}) }; },
+  get prefs() {
+    const p = { theme: 'auto', accent: 'koralle', nick: '', view: 3, ...read('pl.prefs', {}) };
+    p.accent = OLD_ACCENT[p.accent] || p.accent;
+    return p;
+  },
   set prefs(v) { write('pl.prefs', v); },
   get draft() { return read('pl.draft', {}); },
   set draft(v) { write('pl.draft', v); },
+  get grades() { return read('pl.grades', null); },
+  set grades(v) { write('pl.grades', v); },
   get lastSeenEvent() { return read('pl.lastSeenEvent', 0); },
   set lastSeenEvent(v) { write('pl.lastSeenEvent', v); },
   clear() {
