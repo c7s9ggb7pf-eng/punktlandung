@@ -109,3 +109,40 @@ export function abi(G) {
     est: hjs < 4 || exEst || chosen.some((c) => c.est), hjs, abiCount: abiSubs.length, examsMissing: exEst,
   };
 }
+
+/** Mindestpunktzahl (Block I + II) für eine Abiturnote nach NRW-Tabelle, z. B. 1,5 → 733. */
+export const pointsFor = (note) => (note <= 1.0 ? 823 : Math.max(300, Math.floor((17 / 3 - note - 0.1) * 180 + 1e-9) + 1));
+
+/**
+ * Ziel-Rechner: Was schon eingetragen ist, zählt. Für alles noch Offene – leere Halbjahre ab jetzt
+ * (bei Fächern, die noch laufen) und fehlende Abiprüfungen – wird der kleinste Punkteschnitt x gesucht,
+ * mit dem die Zielnote erreicht wird.
+ */
+export function goal(G, target, curHj = currentHj(G.abiYear), running = null) {
+  const need = pointsFor(target);
+  const from = Math.max(0, curHj);
+  const open = [];
+  for (const s of G.subjects) {
+    const own = G.entries.filter((e) => e.sid === s.id);
+    const last = own.length ? Math.max(...own.map((e) => e.hj)) : -1;
+    HJ.forEach((_, hj) => {
+      if (hj < from || own.some((e) => e.hj === hj)) return;
+      if (last >= 0 && last < hj - 1) return; // Fach ist schon vorbei (z. B. nur in der Q1)
+      if (running?.size && !running.has(s.name) && own.length) return; // nicht mehr im Stundenplan
+      open.push({ sid: s.id, hj });
+    });
+  }
+  const openEx = G.subjects.filter((s) => s.abi > 0 && G.exams?.[s.id] == null).map((s) => s.id);
+  const total = (x) => {
+    const H = {
+      ...G,
+      entries: [...G.entries, ...open.map((o) => ({ id: 'g', sid: o.sid, hj: o.hj, kind: 'z', pts: x }))],
+      exams: { ...G.exams, ...Object.fromEntries(openEx.map((id) => [id, x])) },
+    };
+    return abi(H)?.total ?? 0;
+  };
+  const base = { need, open: open.length, exams: openEx.length };
+  if (!open.length && !openEx.length) return { ...base, done: true, reached: total(0) >= need };
+  for (let x = 0; x <= 15; x++) if (total(x) >= need) return { ...base, x, safe: x === 0 };
+  return { ...base, x: null, best: total(15) };
+}

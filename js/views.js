@@ -1,10 +1,10 @@
 // Punktlandung – Ansichten (reines HTML aus dem Zustand).
-import { esc, icon, hue, flap } from './ui.js';
+import { esc, icon, hue, symbol, flap } from './ui.js';
 import {
   today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod, parseDay,
   WD, WD_LONG, isIOS, isStandalone, pushSupported, permission, VERSION,
 } from './lib.js';
-import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi } from './grades.js';
+import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi, goal } from './grades.js';
 
 const wordmark = (cls = '') => `<span class="wordmark ${cls}" aria-label="Punktlandung">punktlandung<span class="wm-dot"></span></span>`;
 
@@ -373,7 +373,7 @@ function lessonBlock(b, i, view, top, h, lane, n, t, nm) {
   const roomOnly = b.st === 'change' && b.notes.some((x) => x.startsWith('Raum')) && !b.notes.some((x) => x.startsWith('Vertretung'));
   const badgeTxt = b.st === 'change' && roomOnly ? (view === 5 ? 'Raum' : 'Raum neu') : BADGE[b.st]?.[view === 5 ? 1 : 0];
   const room = b.ro.join(', ');
-  let inner = `<span class="ls-s">${esc(shortName(b, view))}</span>`;
+  let inner = `<span class="ls-s"><i class="ls-e">${symbol(b.su, b.sl)}</i>${esc(shortName(b, view))}</span>`;
   if (view === 1) {
     inner += `<span class="ls-m">${b.p ? esc(fmtPeriod(b.p, true)) + ' · ' : ''}${hhmm(b.s)}–${hhmm(b.e)}${room ? ' · ' + esc(room) : ''}${b.te.length ? ' · ' + esc(b.te.join(', ')) : ''}</span>`;
   } else if (room) {
@@ -387,7 +387,7 @@ function lessonBlock(b, i, view, top, h, lane, n, t, nm) {
   if (now) inner += `<span class="ls-now">Jetzt</span><span class="ls-prog" style="width:${Math.round(((nm - b.s) / (b.e - b.s)) * 100)}%"></span>`;
   const w = 100 / n;
   return `<button class="ls ${b.st} ${now ? 'cur' : ''} ${past ? 'past' : ''} ${h < 44 ? 'tight' : ''}" data-act="lesson" data-i="${i}"
-    style="--h:${hue(b.su)};top:${top}px;height:${h}px;left:calc(${w * lane}% + 1px);width:calc(${w}% - 2px)"
+    style="--h:${hue(b.su, b.sl)};top:${top}px;height:${h}px;left:calc(${w * lane}% + 1px);width:calc(${w}% - 2px)"
     aria-label="${esc(`${b.sl}, ${hhmm(b.s)} bis ${hhmm(b.e)}${badgeTxt ? ', ' + badgeTxt : ''}`)}">${inner}</button>`;
 }
 
@@ -455,12 +455,52 @@ function calendar(S, blocks, days) {
   </div>`;
 }
 
+/** Himmel nach Tageszeit hinter dem Kopf der Plan-Seite (Morgenrot, Tag, Abendrot, Nacht mit Sternen). */
+function sky() {
+  const force = new URLSearchParams(location.search).get('sky');
+  const m = force ? { dawn: 400, day: 720, dusk: 1110, night: 1380 }[force] ?? nowMin() : nowMin();
+  const ph = m < 330 || m >= 1260 ? 'night' : m < 480 ? 'dawn' : m < 1020 ? 'day' : 'dusk';
+  let p;
+  if (ph === 'night') p = ((m >= 1260 ? m - 1260 : m + 180) / 510);
+  else p = Math.min(1, Math.max(0, (m - 330) / (1260 - 330)));
+  const x = 56 + p * 36;
+  const y = 58 - Math.sin(Math.PI * p) * 38;
+  let extra = '';
+  if (ph === 'night' || ph === 'dusk' || ph === 'dawn') {
+    const n = ph === 'night' ? 26 : 10;
+    for (let i = 0; i < n; i++) {
+      const sx = (i * 37 + 11) % 100;
+      const sy = (i * 23 + 7) % 58;
+      extra += `<i class="star" style="left:${sx}%;top:${sy}%;--d:${(i % 7) * 0.6}s;--s:${1 + (i % 3)}px"></i>`;
+    }
+  }
+  if (ph === 'day') extra += '<i class="cloud c1"></i><i class="cloud c2"></i><i class="cloud c3"></i>';
+  return `<div class="sky ${ph}" aria-hidden="true">${extra}<i class="orb ${ph === 'night' ? 'moon' : 'sun'}" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%"></i></div>`;
+}
+
+/** Kommende Klausuren aus dem Stundenplan (nächste 14 Tage), mit Countdown. */
+function examsCard(blocks) {
+  const t = today();
+  const n = nowMin();
+  const list = blocks.filter((b) => b.st === 'exam' && !isPast(b, t, n)).slice(0, 3);
+  if (!list.length) return '';
+  return `<section class="exams" aria-label="Nächste Klausuren">
+    <small>📝 Nächste Klausuren</small>
+    <div class="ex-row">${list.map((b) => {
+      const d = daysFromToday(b.d);
+      const big = d === 0 ? 'heute' : d === 1 ? 'morgen' : `${d} Tagen`;
+      return `<button class="ex" data-act="dayOne" data-v="${b.d}" style="--h:${hue(b.su, b.sl)}">
+        <span class="ex-e">${symbol(b.su, b.sl)}</span><b>${esc(b.sl.replace(/\s+(LK|GK)$/i, ''))}</b>
+        <span class="ex-d">${d > 1 ? 'in ' : ''}${big}</span><span class="ex-m">${WD[weekday(b.d)]} · ${hhmm(b.s)}${b.ro.length ? ' · ' + esc(b.ro[0]) : ''}</span></button>`;
+    }).join('')}</div></section>`;
+}
+
 function plan(S) {
   const blocks = S.state?.snapshot?.blocks || [];
   const name = firstName(S);
   const t = parseDay(today());
   const view = S.prefs.view || 3;
-  const head = `<header class="top">${wordmark()}${liveChip(S)}</header>
+  const head = `${sky()}<header class="top">${wordmark()}${liveChip(S)}</header>
     <p class="greet">${name ? `Hey ${esc(name)} 👋` : 'Hey 👋'}</p>
     <h1 class="title">${WD_LONG[t.getDay()]}, ${t.getDate()}. <span>${MON[t.getMonth()]}</span></h1>`;
   if (!S.state) {
@@ -471,6 +511,7 @@ function plan(S) {
   const canNext = !!stepDay(S, 1);
   return `${head}
     ${hero(S, blocks)}
+    ${examsCard(blocks)}
     <div class="seg view-seg" role="tablist">${[[1, '1 Tag'], [3, '3 Tage'], [5, 'Woche']].map(([k, l]) => `<button role="tab" class="${view === k ? 'on' : ''}" data-act="view" data-v="${k}" aria-selected="${view === k}">${l}</button>`).join('')}</div>
     <div class="cal-nav">
       <button class="icon-btn ghost" data-act="step" data-v="-1" aria-label="Zurück" ${canPrev ? '' : 'disabled'}>${icon('left')}</button>
@@ -493,6 +534,37 @@ function ring(r) {
     <text x="56" y="61" text-anchor="middle" class="ring-val">${r ? (r.note != null ? fmt1(r.note) : '–') : '–'}</text>
     <text x="56" y="78" text-anchor="middle" class="ring-lbl">${r && r.est ? 'GESCHÄTZT' : 'SCHNITT'}</text>
   </svg>`;
+}
+
+const GOALS = [1.0, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0];
+
+/** Ziel-Rechner-Karte im Noten-Tab. */
+function goalCard(G, blocks) {
+  const target = G.goal ?? 1.5;
+  const g = goal(G, target, currentHj(G.abiYear), new Set((blocks || []).map((b) => b.sl)));
+  let big;
+  let small;
+  if (g.done) {
+    big = g.reached ? `🎯 <b>${fmt1(target)}</b> hast du sicher.` : `Für ${fmt1(target)} reicht es leider nicht mehr.`;
+    small = 'Alles ist eingetragen.';
+  } else if (g.x == null) {
+    big = `${fmt1(target)} ist selbst mit 15 Punkten überall nicht mehr drin.`;
+    small = `Maximal möglich: ${g.best} von ${g.need} nötigen Punkten. Probier ein anderes Ziel.`;
+  } else if (g.safe) {
+    big = `🎉 Für die <b>${fmt1(target)}</b> bist du schon auf Kurs – selbst mit wenig Punkten.`;
+    small = 'Hochrechnung mit deinen bisherigen Noten.';
+  } else {
+    big = `Du brauchst im Schnitt <b class="goal-x ${tone(g.x)}">${g.x} Punkte</b> <span>(${noteOf(g.x)})</span>`;
+    small = `in allem, was noch offen ist: ${g.open ? `${g.open} Halbjahreskurse` : ''}${g.open && g.exams ? ' und ' : ''}${g.exams ? `${g.exams} Prüfung${g.exams > 1 ? 'en' : ''}` : ''} · nötig sind ${g.need} von 900 P.`;
+  }
+  const pos = g.x == null ? 100 : (g.x / 15) * 100;
+  return `<section class="card goal">
+    <div class="goal-h"><small>Ziel-Rechner</small><span>Wunschnote</span></div>
+    <div class="chips goal-chips">${GOALS.map((n) => `<button class="chip ${n === target ? 'on' : ''}" data-act="setGoal" data-v="${n}">${fmt1(n)}</button>`).join('')}</div>
+    <p class="goal-big">${big}</p>
+    ${!g.done && g.x != null && !g.safe ? `<div class="goal-bar"><i style="left:${pos}%"></i></div><div class="goal-scale"><span>0</span><span>5</span><span>10</span><span>15 P.</span></div>` : ''}
+    <p class="goal-small">${small}</p>
+  </section>`;
 }
 
 function noten(S) {
@@ -529,10 +601,10 @@ function noten(S) {
       return res ? `<span class="pt ${tone(res.pts)} ${res.est ? 'est' : ''} ${hj === cur ? 'cur' : ''}">${res.pts}</span>` : `<span class="pt none ${hj === cur ? 'cur' : ''}">·</span>`;
     }).join('');
     return `<button class="subj" data-act="subject" data-v="${s.id}">
-      <span class="sn"><i style="--h:${hue(s.su)}"></i><span><b>${esc(s.name)}</b>${tag ? `<small>${tag}</small>` : ''}</span></span>
+      <span class="sn"><i class="sym" style="--h:${hue(s.su, s.name)}">${symbol(s.su, s.name)}</i><span><b>${esc(s.name)}</b>${tag ? `<small>${tag}</small>` : ''}</span></span>
       ${cells}<span class="avg">${a == null ? '–' : fmt1(a)}</span></button>`;
   }).join('');
-  return `${head}${hint}${summary}
+  return `${head}${hint}${summary}${r ? goalCard(G, S.state?.snapshot?.blocks) : ''}
     <section class="card subjects">
       <div class="subj head"><span class="sn">Fach</span>${HJ.map((h, i) => `<span class="${i === cur ? 'cur' : ''}">${h}</span>`).join('')}<span class="avg">Ø</span></div>
       ${rows}
@@ -556,8 +628,8 @@ export function subjectSheet(G, sid) {
     </div>`;
   }).join('');
   const ex = G.exams?.[sid];
-  return `<div class="sheet-body" style="--h:${hue(s.su)}">
-    <h3 class="sheet-title"><i class="subj-dot"></i>${esc(s.name)}</h3>
+  return `<div class="sheet-body" style="--h:${hue(s.su, s.name)}">
+    <h3 class="sheet-title"><i class="subj-dot sym">${symbol(s.su, s.name)}</i>${esc(s.name)}</h3>
     <div class="seg small"><button class="${!s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="0">Grundkurs</button><button class="${s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="1">Leistungskurs</button></div>
     <div class="field-row"><span>Abiturfach</span><div class="chips">${[0, 1, 2, 3, 4].map((n) => `<button class="chip ${s.abi === n ? 'on' : ''}" data-act="setAbi" data-sid="${sid}" data-v="${n}">${n ? n + '.' : 'nein'}</button>`).join('')}</div></div>
     ${s.abi ? `<div class="field-row"><span>Abiturprüfung</span>${ex != null ? `<b class="pt ${tone(ex)}">${ex}</b><button class="mini" data-act="delExam" data-sid="${sid}">Löschen</button>` : `<button class="mini acc" data-act="addGrade" data-sid="${sid}" data-hj="abi">Punkte eintragen</button>`}</div>` : ''}
@@ -576,7 +648,7 @@ export function addSheet(G, A) {
     + (sub?.abi ? `<button class="${isAbi ? 'on' : ''}" data-act="addSet" data-k="hj" data-v="abi">Abi</button>` : '');
   return `<div class="sheet-body">
     <h3 class="sheet-title">Note eintragen</h3>
-    <div class="chips subj-chips">${G.subjects.map((s) => `<button class="chip ${s.id === sub?.id ? 'on' : ''}" style="--h:${hue(s.su)}" data-act="addSet" data-k="sid" data-v="${s.id}"><i></i>${esc(s.name)}</button>`).join('')}</div>
+    <div class="chips subj-chips">${G.subjects.map((s) => `<button class="chip ${s.id === sub?.id ? 'on' : ''}" style="--h:${hue(s.su, s.name)}" data-act="addSet" data-k="sid" data-v="${s.id}"><i></i>${esc(s.name)}</button>`).join('')}</div>
     <div class="seg small">${hjBtns}</div>
     ${isAbi ? '<p class="muted small-note">Punkte deiner Abiturprüfung in diesem Fach.</p>' : `<div class="seg small">${Object.entries(KIND).map(([k, l]) => `<button class="${A.kind === k ? 'on' : ''}" data-act="addSet" data-k="kind" data-v="${k}">${l}</button>`).join('')}</div>`}
     <div class="pts-grid">${Array.from({ length: 16 }, (_, i) => 15 - i).map((p) => `<button class="pbtn ${tone(p)}" data-act="saveGrade" data-v="${p}"><b>${p}</b><small>${noteOf(p)}</small></button>`).join('')}</div>
@@ -600,7 +672,31 @@ export function newSubjectSheet() {
 function eventIcon(ev) {
   const m = /^(\p{Extended_Pictographic}️?)\s*/u.exec(ev.title || '');
   if (m) return [m[1], ev.title.slice(m[0].length)];
-  return [{ cancel: '🎉', restore: '⚠️', auth: '🔑', test: '🎯' }[ev.kind] || '🔔', ev.title];
+  return [{ cancel: '🎉', restore: '⚠️', auth: '🔑', test: '🎯', change: '🔀', exam: '📝' }[ev.kind] || '🔔', ev.title];
+}
+
+/** „Freistunden-Rückblick“ – wie ein Jahresrückblick, gezählt seit dem Start von Punktlandung. */
+function statsCard(st) {
+  if (!st) return '';
+  const since = dateLong(st.since).replace(/^\w+, /, '');
+  if (!st.total) {
+    return `<section class="wrapped calm"><small>Freistunden-Rückblick · seit ${esc(since)}</small><b class="w-big">0</b><p>Noch keine Stunde ausgefallen. Wir zählen mit – versprochen.</p></section>`;
+  }
+  const max = Math.max(...st.top.map(([, n]) => n));
+  const wdMax = Math.max(...st.weekday.slice(1, 6));
+  const bestWd = wdMax ? WD_LONG[st.weekday.indexOf(wdMax)] : '';
+  const facts = [
+    st.sleepIn ? `<span><b>${st.sleepIn}×</b> ausgeschlafen</span>` : '',
+    st.earlyEnd ? `<span><b>${st.earlyEnd}×</b> früher Schluss</span>` : '',
+    st.fullDays ? `<span><b>${st.fullDays}×</b> ganzer Tag frei</span>` : '',
+    bestWd ? `<span>Lieblings-Ausfalltag: <b>${esc(bestWd)}</b></span>` : '',
+  ].filter(Boolean).join('');
+  return `<section class="wrapped">
+    <small>Freistunden-Rückblick · seit ${esc(since)}</small>
+    <div class="w-head"><b class="w-big">${st.total}</b><span>Stunden<br>ausgefallen${st.upcoming ? `<em>davon ${st.upcoming} noch angekündigt</em>` : ''}</span></div>
+    <div class="w-bars">${st.top.map(([sl, n]) => `<div class="w-bar" style="--h:${hue('', sl)};--w:${Math.round((n / max) * 100)}%"><span>${symbol('', sl)} ${esc(sl)}</span><b>${n}</b></div>`).join('')}</div>
+    ${facts ? `<div class="w-facts">${facts}</div>` : ''}
+  </section>`;
 }
 
 function history(S) {
@@ -630,7 +726,7 @@ function history(S) {
       }).join('')}`;
     }).join('');
   }
-  return `<header class="top">${wordmark()}</header><h1 class="title">Verlauf</h1><p class="page-sub">Alles, was Punktlandung dir gemeldet hat.</p>${body}`;
+  return `<header class="top">${wordmark()}</header><h1 class="title">Verlauf</h1><p class="page-sub">Alles, was Punktlandung dir gemeldet hat.</p>${statsCard(S.state?.stats)}${body}`;
 }
 
 // ---------------------------------------------------------------- Ich
@@ -683,7 +779,11 @@ function me(S) {
     <div class="group">
       ${pushRow(S)}
       <label class="row"><span class="label">„Doch Unterricht“ melden<small>Wenn ein Ausfall zurückgenommen wird</small></span>
-        <input type="checkbox" class="switch" data-act="toggleRestore" ${set.restore !== false ? 'checked' : ''}></label>
+        <input type="checkbox" class="switch" data-act="toggleSetting" data-k="restore" ${set.restore !== false ? 'checked' : ''}></label>
+      <label class="row"><span class="label">Klausur-Erinnerung<small>Am Vorabend um 17 Uhr, mit Raum und Uhrzeit</small></span>
+        <input type="checkbox" class="switch" data-act="toggleSetting" data-k="exams" ${set.exams !== false ? 'checked' : ''}></label>
+      <label class="row"><span class="label">Raum- & Lehrerwechsel melden<small>Wenn sich Raum oder Lehrkraft ändert</small></span>
+        <input type="checkbox" class="switch" data-act="toggleSetting" data-k="changes" ${set.changes === true ? 'checked' : ''}></label>
       ${pushOk ? `<button class="row link" data-act="test" ${S.busy.test ? 'disabled' : ''}><span class="r-ico">${icon('send')}</span><span class="label">Test-Nachricht schicken</span>${icon('right', 'chev')}</button>` : ''}
     </div>
 
@@ -745,9 +845,9 @@ export function lessonSheet(b) {
   const status = b.st === 'cancel' ? '<span class="pill free">Fällt aus</span>'
     : b.st === 'change' ? '<span class="pill change">Geändert</span>'
       : b.st === 'exam' ? '<span class="pill exam">Klausur</span>' : '<span class="pill">Findet statt</span>';
-  return `<div class="sheet-body" style="--h:${hue(b.su)}">
+  return `<div class="sheet-body" style="--h:${hue(b.su, b.sl)}">
     <div class="sheet-kicker">${esc(dayWord(b.d))} · ${esc(dateLong(b.d))}</div>
-    <h3 class="sheet-title"><i class="subj-dot"></i>${esc(b.sl)}</h3>
+    <h3 class="sheet-title"><i class="subj-dot sym">${symbol(b.su, b.sl)}</i>${esc(b.sl)}</h3>
     <div>${status}${b.st === 'cancel' && b.d >= today() ? ` <span class="pill ghost">${esc(until(b.d, b.s))}</span>` : ''}</div>
     <dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
     <button class="btn soft" data-act="closeSheet">Schließen</button>

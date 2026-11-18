@@ -32,20 +32,28 @@ const P = {
 export const icon = (name, cls = '') =>
   `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
 
-// Fachfarben: bekannte Fächer bekommen eine passende Farbe, der Rest eine feste aus dem Namen.
-const HUES = [
-  [/^(M|MA|MAT)/, 255], [/^(D|DE|DEU)/, 25], [/^(E|EN|ENG)/, 75], [/^(BI|BIO)/, 145], [/^(CH)/, 190],
-  [/^(PH)/, 285], [/^(SP|SPO)/, 45], [/^(KU|KUN)/, 340], [/^(MU)/, 310], [/^(GE|GES)/, 55], [/^(EK|ERD)/, 165],
-  [/^(SW|PO|PW|SOWI|WI)/, 95], [/^(IF|INF)/, 210], [/^(F|FR|FRZ)/, 230], [/^(S|SPA|SN)/, 15], [/^(L|LA|LAT)/, 270],
-  [/^(KR|ER|REL|RK|EV)/, 300], [/^(PL|PHI|PPL)/, 240], [/^(PK|PJ|PROJ)/, 120],
+// Fächer: abgestimmte Farbpalette (Farbtöne gleichmäßig verteilt) + eigenes Symbol je Fach.
+// Erkannt am Kurznamen (z. B. "M", "BI") oder am Langnamen ("Mathematik", "Biologie").
+const SUBJ = [
+  [/^(M|MA|MAT)$|mathe/i, 248, '📐'], [/^(D|DE|DEU)$|deutsch/i, 22, '📖'], [/^(E|EN|ENG)$|englisch/i, 330, '💬'],
+  [/^(BI|BIO)$|biolog/i, 142, '🧬'], [/^(CH)$|chemie/i, 188, '⚗️'], [/^(PH)$|physik/i, 272, '⚛️'],
+  [/^(SP|SPO)$|sport/i, 52, '⚽'], [/^(KU|KUN)$|kunst/i, 300, '🎨'], [/^(MU)$|musik/i, 318, '🎵'],
+  [/^(GE|GES)$|geschicht/i, 38, '🏛️'], [/^(EK|ERD|GEO)$|erdkunde|geograf/i, 165, '🌍'],
+  [/^(SW|PO|PW|SOWI|WI|POL)$|sozialw|politik|wirtschaft/i, 95, '⚖️'], [/^(IF|INF)$|informatik/i, 212, '💻'],
+  [/^(F|FR|FRZ)$|französ/i, 230, '🥐'], [/^(S|SPA|SN)$|spanisch/i, 8, '💃'], [/^(L|LA|LAT)$|latein/i, 64, '🏺'],
+  [/^(KR|ER|REL|RK|EV)$|religion/i, 285, '🕊️'], [/^(PL|PHI|PPL)$|philosoph/i, 260, '💭'],
+  [/^(PK|PJ|PROJ)$|projekt/i, 118, '🚀'], [/^(PA|PÄ|EW)$|pädagog|erziehung/i, 345, '🧸'], [/^(LI)$|literatur/i, 15, '✒️'],
 ];
-export function hue(su) {
+function subjInfo(su, sl = '') {
   const k = String(su || '').toUpperCase().replace(/[^A-ZÄÖÜ]/g, '');
-  for (const [re, h] of HUES) if (re.test(k)) return h;
+  const long = String(sl || su || '').replace(/\s+(LK|GK)\b.*$/i, '');
+  for (const [re, h, e] of SUBJ) if (re.test(k) || re.test(long)) return { h, e };
   let h = 7;
-  for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return h % 360;
+  for (const ch of k || long) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { h: (h % 12) * 30 + 15, e: '✏️' };
 }
+export const hue = (su, sl) => subjInfo(su, sl).h;
+export const symbol = (su, sl) => subjInfo(su, sl).e;
 
 // ---------- Hinweis oben ----------
 let toastTimer;

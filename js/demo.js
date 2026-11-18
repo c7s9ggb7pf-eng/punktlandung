@@ -50,6 +50,10 @@ function demoBuild(blocks, mon, tomorrow, next) {
       className: 'Q2', authKind: 'password', status: 'ok', lastError: null, lastCheckAt: ago(1), lastSuccessAt: ago(1), settings: { restore: true },
     },
     snapshot: { fetchedAt: ago(1), from: mon, to: addDays(mon, 11), blocks },
+    stats: {
+      since: addDays(mon, -42), total: 23, upcoming: 3, days: 14, sleepIn: 4, fullDays: 1, earlyEnd: 3,
+      top: [['Mathematik', 7], ['Englisch LK', 5], ['Religion', 4], ['Kunst', 4], ['Erdkunde', 3]], weekday: [0, 5, 3, 6, 4, 5, 0],
+    },
     events: demoEvents(blocks, tomorrow, next),
     device: { push: true, pushError: null, pushOkAt: ago(14), platform: 'ios' },
     pushDevices: 1,

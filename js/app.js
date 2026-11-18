@@ -336,6 +336,12 @@ document.addEventListener('touchend', (e) => {
 
 // ---------- Aktionen ----------
 const actions = {
+  setGoal(el) {
+    S.grades.goal = Number(el.dataset.v);
+    saveGrades();
+    haptic(5);
+    render();
+  },
   start() {
     S.ob.step = isIOS && !isStandalone() ? 'install' : 'school';
     render();
@@ -598,14 +604,18 @@ const actions = {
     S.busy.push = false;
     render();
   },
-  async toggleRestore(el) {
-    const restore = el.checked;
-    if (S.demo) return;
+  async toggleSetting(el) {
+    const k = el.dataset.k;
+    const on = el.checked;
+    if (S.demo) {
+      S.state.account.settings = { ...S.state.account.settings, [k]: on };
+      return toast(on ? 'Eingeschaltet (Vorschau)' : 'Ausgeschaltet (Vorschau)');
+    }
     try {
-      const r = await api('settings', { settings: { restore } });
+      const r = await api('settings', { settings: { [k]: on } });
       setState(r.state);
     } catch (e) {
-      el.checked = !restore;
+      el.checked = !on;
       toast(e.message);
     }
   },
