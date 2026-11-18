@@ -554,8 +554,8 @@ function goalCard(G, blocks) {
     big = `🎉 Für die <b>${fmt1(target)}</b> bist du schon auf Kurs – selbst mit wenig Punkten.`;
     small = 'Hochrechnung mit deinen bisherigen Noten.';
   } else {
-    big = `Du brauchst im Schnitt <b class="goal-x ${tone(g.x)}">${g.x} Punkte</b> <span>(${noteOf(g.x)})</span>`;
-    small = `in allem, was noch offen ist: ${g.open ? `${g.open} Halbjahreskurse` : ''}${g.open && g.exams ? ' und ' : ''}${g.exams ? `${g.exams} Prüfung${g.exams > 1 ? 'en' : ''}` : ''} · nötig sind ${g.need} von 900 P.`;
+    big = `Du brauchst im Schnitt <b class="goal-x ${tone(g.x)}">${g.x} Punkte</b> <span style="white-space:nowrap">(${noteOf(g.x)})</span>`;
+    small = `in allem, was noch offen ist: ${g.open ? `${g.open} Halbjahreskurs${g.open > 1 ? 'e' : ''}` : ''}${g.open && g.exams ? ' und ' : ''}${g.exams ? `${g.exams} Prüfung${g.exams > 1 ? 'en' : ''}` : ''} · nötig sind ${g.need} von 900 P.`;
   }
   const pos = g.x == null ? 100 : (g.x / 15) * 100;
   return `<section class="card goal">
