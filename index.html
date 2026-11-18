@@ -23,7 +23,9 @@
 <script>
   try {
     var p = JSON.parse(localStorage.getItem('pl.prefs') || '{}');
-    if (p.theme && p.theme !== 'auto') document.documentElement.dataset.theme = p.theme;
+    var theme = p.theme || 'light';
+    if (p.themeV !== 2 && theme === 'auto') theme = 'light';
+    if (theme !== 'auto') document.documentElement.dataset.theme = theme;
     var old = { lime: 'koralle', mint: 'gruen', sky: 'blau', lilac: 'lila', sun: 'sonne' };
     document.documentElement.dataset.accent = old[p.accent] || p.accent || 'koralle';
   } catch (e) {}

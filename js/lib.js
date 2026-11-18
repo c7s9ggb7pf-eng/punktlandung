@@ -1,7 +1,7 @@
 // Punktlandung – Grundlagen: Speicher, Server-Anbindung, Mitteilungen, Zeit.
 
 export const API = 'https://ahgjcjkbkvkyedztyory.supabase.co/functions/v1/punktlandung';
-export const VERSION = '1.1.0';
+export const VERSION = '1.1.1';
 
 // ---------- Speicher (lokal auf dem Gerät) ----------
 const read = (k, fb) => {
@@ -49,8 +49,14 @@ export const store = {
   get state() { return read('pl.state', null); },
   set state(v) { write('pl.state', v); },
   get prefs() {
-    const p = { theme: 'auto', accent: 'koralle', nick: '', view: 3, ...read('pl.prefs', {}) };
+    const p = { theme: 'light', accent: 'koralle', nick: '', view: 3, ...read('pl.prefs', {}) };
     p.accent = OLD_ACCENT[p.accent] || p.accent;
+    // Ab 1.1.1 ist Hell der Standard (Design B). „Automatisch“ aus der Zeit davor wird zu Hell;
+    // wer danach selbst „Automatisch“ oder „Dunkel“ wählt, behält das (themeV wird mitgespeichert).
+    if (p.themeV !== 2) {
+      if (p.theme === 'auto') p.theme = 'light';
+      p.themeV = 2;
+    }
     return p;
   },
   set prefs(v) { write('pl.prefs', v); },
