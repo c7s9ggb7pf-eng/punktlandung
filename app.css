@@ -1027,3 +1027,5 @@ html.scrolled body::after { opacity: 1; }
   box-shadow: 0 6px 20px -8px rgba(0,0,0,.35), 0 0 0 1px var(--line); }
 .pull.show { opacity: 1; }
 .pull.ready { color: var(--accent-ink, #fff); background: var(--accent); }
+.today-line { margin: -2px 0 6px; font-size: 14px; color: var(--text-2); }
+.today-line b { color: var(--text); font-weight: 750; }

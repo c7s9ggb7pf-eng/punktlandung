@@ -679,13 +679,32 @@ function coursesPrompt(S) {
     <em>Auswählen</em></button>`;
 }
 
+const blocksOf = (S) => S.state?.snapshot?.blocks || [];
+/** Eine Zeile für heute: was gerade läuft, was als Nächstes kommt, wann Schluss ist. */
+function todayLine(blocks) {
+  const t = today();
+  const n = nowMin();
+  const act = blocks.filter((b) => b.d === t && b.st !== 'cancel');
+  if (!act.length) return '';
+  const now = act.find((b) => b.s <= n && b.e > n);
+  const next = act.find((b) => b.s > n);
+  const end = Math.max(...act.map((b) => b.e));
+  if (n >= end) return '';
+  const short = (b) => esc(b.sl.replace(/\s+(LK|GK)$/i, ''));
+  const room = (b) => (b.ro.length ? ` in ${esc(b.ro[0])}` : '');
+  const parts = now ? [`Jetzt <b>${short(now)}</b> bis ${hhmm(now.e)}`] : [];
+  if (next) parts.push(`${now ? 'danach' : `Um ${hhmm(next.s)}`} <b>${short(next)}</b>${room(next)}`);
+  parts.push(`Schluss ${hhmm(end)}`);
+  return `<p class="today-line">${parts.join(' · ')}</p>`;
+}
+
 function plan(S) {
   const blocks = S.state?.snapshot?.blocks || [];
   const name = firstName(S);
   const t = parseDay(today());
   const view = S.prefs.view || 3;
   const head = `${sky()}<header class="top">${wordmark()}${liveChip(S)}</header>
-    <p class="greet">${name ? `Hey ${esc(name)} 👋` : 'Hey 👋'}</p>
+    <p class="greet">${name ? `Hey ${esc(name)} 👋` : 'Hey 👋'}</p>${S.state ? todayLine(blocksOf(S)) : ''}
     <h1 class="title">${WD_LONG[t.getDay()]}, ${t.getDate()}. <span>${MON[t.getMonth()]}</span></h1>`;
   if (!S.state) {
     return `${head}<div class="hero skel"></div><div class="seg view-seg"></div><div class="cal skel" style="height:360px"></div>`;
