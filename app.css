@@ -891,3 +891,7 @@ details.row p { margin: 0; padding: 0 16px 16px 61px; color: var(--text-2); font
 .w-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .w-facts span { padding: 6px 10px; border-radius: 99px; background: rgba(255, 255, 255, .12); font-size: 12.5px; }
 .w-bar span { word-spacing: 4px; }
+
+/* 1.2.3: Woche ohne Silbentrennung, Tagesansicht ohne doppeltes Datum */
+.cal.v5 .ls-s { hyphens: none; -webkit-hyphens: none; overflow-wrap: normal; word-break: normal; white-space: nowrap; overflow: hidden; text-overflow: clip; display: block; max-width: 100%; }
+.cal.v1 .cal-head { display: none; }

@@ -360,10 +360,17 @@ function lanes(list) {
   return out;
 }
 
+const ABBR = [
+  [/^mathe/i, 'Mathe'], [/^englisch/i, 'Engl.'], [/^erdkunde|^geograph/i, 'Erdk.'], [/^biolog/i, 'Bio'], [/^religion/i, 'Reli'],
+  [/^projekt/i, 'Projekt'], [/^sozialw/i, 'SoWi'], [/^geschicht/i, 'Gesch.'], [/^informatik/i, 'Info'], [/^philosoph/i, 'Philo'],
+  [/^pädagog|^erziehungsw/i, 'Päda'], [/^französ/i, 'Franz.'], [/^spanisch/i, 'Span.'], [/^literatur/i, 'Lit.'], [/^wirtschaft/i, 'Wirt.'],
+];
 const shortName = (b, view) => {
   if (view !== 5) return b.sl;
   const n = b.sl.replace(/\s+(LK|GK)$/i, '');
-  return n.length <= 10 ? n : b.su || n;
+  if (n.length <= 7) return n;
+  for (const [re, a] of ABBR) if (re.test(n)) return a;
+  return n.length <= 9 ? n : (b.su && b.su.length <= 6 ? b.su : n.slice(0, 6) + '.');
 };
 const BADGE = { cancel: ['Fällt aus', 'aus'], change: ['Geändert', 'neu'], exam: ['Klausur', 'Klausur'] };
 

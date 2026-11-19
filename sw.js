@@ -1,5 +1,5 @@
 // Punktlandung – Service Worker: Offline-Start und Mitteilungen.
-const CACHE = 'punktlandung-v8';
+const CACHE = 'punktlandung-v9';
 const SHELL = [
   './',
   './index.html',
