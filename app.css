@@ -968,3 +968,6 @@ body::after {
 }
 html.scrolled body::after { opacity: 1; }
 .pt.none.off { opacity: .35; }
+.subj.bll-row { grid-template-columns: minmax(0, 1fr) 30px 40px; }
+.subj.bll-row .pt { grid-column: 2; }
+.pbtn.sel { outline: 2.5px solid var(--text); outline-offset: 1px; }

@@ -793,9 +793,11 @@ function noten(S) {
     <section class="card subjects">
       <div class="subj head"><span class="sn">Fach</span>${HJ.map((h, i) => `<span class="${i === cur ? 'cur' : ''}">${h}</span>`).join('')}<span class="avg">Ø</span></div>
       ${rows}
+      ${bllCard(G)}
     </section>
     <button class="btn" data-act="addGrade">${icon('plus')}Note eintragen</button>
     <button class="btn link" data-act="addSubject">Fach hinzufügen (z. B. nur Q1)</button>
+    ${G.bll?.on ? '' : '<button class="btn link" data-act="bllOpen">Besondere Lernleistung hinzufügen (5. Abiturfach)</button>'}
     <p class="fine center">Deine Noten bleiben nur auf diesem Handy. Hochrechnung nach APO-GOSt NRW, vereinfacht – ohne Gewähr.</p>`;
 }
 
@@ -841,6 +843,30 @@ export function addSheet(G, A) {
     ${isAbi ? '<p class="muted small-note">Punkte deiner Abiturprüfung in diesem Fach.</p>' : `<div class="seg small">${Object.entries(KIND).map(([k, l]) => `<button class="${A.kind === k ? 'on' : ''}" data-act="addSet" data-k="kind" data-v="${k}">${l}</button>`).join('')}</div>`}
     <div class="pts-grid">${Array.from({ length: 16 }, (_, i) => 15 - i).map((p) => `<button class="pbtn ${tone(p)}" data-act="saveGrade" data-v="${p}"><b>${p}</b><small>${noteOf(p)}</small></button>`).join('')}</div>
     <button class="btn link" data-act="closeSheet">Abbrechen</button>
+  </div>`;
+}
+
+// Besondere Lernleistung (5. Abiturfach)
+function bllCard(G) {
+  const b = G.bll;
+  if (!b?.on) return '';
+  return `<button class="subj bll-row" data-act="bllOpen">
+    <span class="sn"><i style="--h:45"></i><span><b>${esc(b.title || 'Besondere Lernleistung')}</b><small>5. Abiturfach · zählt ×4 in Block II</small></span></span>
+    ${b.pts != null ? `<span class="pt ${tone(b.pts)}">${b.pts}</span>` : '<span class="pt none">·</span>'}
+  </button>`;
+}
+
+export function bllSheet(G) {
+  const b = G.bll || {};
+  return `<div class="sheet-body">
+    <h3 class="sheet-title">Besondere Lernleistung</h3>
+    <p class="muted">Dein 5. Abiturfach. Mit ihr zählen in Block II deine 4 Prüfungen und die Lernleistung je ×4 statt ×5 (zusammen höchstens 300 Punkte). Trag die Punkte ein, die du für Arbeit und Kolloquium zusammen bekommst.</p>
+    <label class="field"><span>Thema (optional)</span><input class="input" data-in="bllTitle" value="${esc(b.title || '')}" maxlength="60" placeholder="z. B. Facharbeit Sport"></label>
+    <div class="field-row"><span>Punkte</span>${b.pts != null ? `<b class="pt ${tone(b.pts)}">${b.pts}</b>` : '<small class="muted">noch offen – bis dahin geschätzt</small>'}</div>
+    <div class="pts-grid">${Array.from({ length: 16 }, (_, i) => 15 - i).map((p) => `<button class="pbtn ${tone(p)} ${b.pts === p ? 'sel' : ''}" data-act="bllPts" data-v="${p}"><b>${p}</b><small>${noteOf(p)}</small></button>`).join('')}</div>
+    <button class="btn soft" data-act="closeSheet">Fertig</button>
+    ${b.pts != null ? '<button class="btn link" data-act="bllPts" data-v="">Punkte löschen</button>' : ''}
+    <button class="btn link" data-act="bllRemove">Besondere Lernleistung entfernen</button>
   </div>`;
 }
 

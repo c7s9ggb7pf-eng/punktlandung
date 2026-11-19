@@ -566,6 +566,29 @@ const actions = {
     } else closeSheet();
     render();
   },
+  // ---------- Besondere Lernleistung ----------
+  bllOpen() {
+    if (!S.grades.bll?.on) {
+      S.grades.bll = { on: true, title: S.grades.bll?.title || '', pts: S.grades.bll?.pts ?? null };
+      saveGrades();
+      render();
+    }
+    openSheet(V.bllSheet(S.grades));
+  },
+  bllPts(el) {
+    S.grades.bll.pts = el.dataset.v === '' ? null : Number(el.dataset.v);
+    saveGrades();
+    haptic(10);
+    updateSheet(V.bllSheet(S.grades));
+    render();
+  },
+  bllRemove() {
+    S.grades.bll = { ...S.grades.bll, on: false };
+    saveGrades();
+    closeSheet();
+    toast('Besondere Lernleistung entfernt');
+    render();
+  },
   addSubject() {
     S.newSub = { name: '', q1: true };
     openSheet(V.newSubjectSheet(S.newSub));
@@ -799,6 +822,10 @@ const actions = {
 };
 
 const inputs = {
+  bllTitle(el) {
+    S.grades.bll.title = el.value.trim();
+    saveGrades();
+  },
   schoolq(el) { searchSchools(el.value); },
   hwDate(el) {
     if (!el.value) return;

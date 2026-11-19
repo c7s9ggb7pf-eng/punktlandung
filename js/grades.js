@@ -4,7 +4,8 @@
 //   { abiYear: 2027,
 //     subjects: [{ id, name, su, lk: bool, abi: 0–4, q1: bool (nur in der Q1 belegt), manual: bool (selbst angelegt) }],
 //     entries:  [{ id, sid, hj: 0–3, kind: 'k' | 's' | 'z', pts, at }],   // Klausur, Sonstige Mitarbeit, Zeugnis
-//     exams:    { [sid]: pts } }                                          // Abiturprüfung
+//     exams:    { [sid]: pts },                                           // Abiturprüfung
+//     bll:      { on: bool, title, pts } }                                // Besondere Lernleistung (5. Abiturfach)
 
 export const HJ = ['Q1.1', 'Q1.2', 'Q2.1', 'Q2.2'];
 export const KIND = { k: 'Klausur', s: 'Mitarbeit', z: 'Zeugnis' };
@@ -104,6 +105,7 @@ export function subjectAvg(G, sid) {
  * Block I = P / S × 40 (LK-Kurse doppelt in P und S, max. 600), eingebracht werden alle LK-Kurse,
  * alle Kurse der Abifächer und die besten übrigen – anteilig zu den Halbjahren mit Noten (40 Kurse bei 4).
  * Block II = 4 Abiturprüfungen × 5 (max. 300); fehlt eine Prüfung, zählt der Fachschnitt.
+ * Mit besonderer Lernleistung (5. Abiturfach): 4 Prüfungen + BLL, alles × 4 (max. 300).
  * Note = 17/3 − E/180, auf eine Nachkommastelle abgeschnitten.
  */
 export function abi(G) {
@@ -134,7 +136,11 @@ export function abi(G) {
     exEst = true;
     return Math.round(sub ? (subjectAvg(G, sub.id) ?? overall) : overall);
   });
-  const block2 = Math.min(300, exams.reduce((a, b) => a + b, 0) * 5);
+  if (G.bll?.on) {
+    if (G.bll.pts == null) exEst = true;
+    exams.push(G.bll.pts ?? Math.round(overall));
+  }
+  const block2 = Math.min(300, exams.reduce((a, b) => a + b, 0) * (G.bll?.on ? 4 : 5));
   const total = block1 + block2;
   const passed = total >= 300 && block1 >= 200 && block2 >= 100;
   const note = Math.max(1, Math.floor((17 / 3 - total / 180) * 10 + 1e-9) / 10);
@@ -167,16 +173,18 @@ export function goal(G, target, curHj = currentHj(G.abiYear), running = null) {
     });
   }
   const openEx = G.subjects.filter((s) => s.abi > 0 && G.exams?.[s.id] == null).map((s) => s.id);
+  const openBll = !!G.bll?.on && G.bll.pts == null;
   const total = (x) => {
     const H = {
       ...G,
       entries: [...G.entries, ...open.map((o) => ({ id: 'g', sid: o.sid, hj: o.hj, kind: 'z', pts: x }))],
       exams: { ...G.exams, ...Object.fromEntries(openEx.map((id) => [id, x])) },
+      ...(openBll ? { bll: { ...G.bll, pts: x } } : {}),
     };
     return abi(H)?.total ?? 0;
   };
-  const base = { need, open: open.length, exams: openEx.length };
-  if (!open.length && !openEx.length) return { ...base, done: true, reached: total(0) >= need };
+  const base = { need, open: open.length, exams: openEx.length + (openBll ? 1 : 0) };
+  if (!open.length && !openEx.length && !openBll) return { ...base, done: true, reached: total(0) >= need };
   for (let x = 0; x <= 15; x++) if (total(x) >= need) return { ...base, x, safe: x === 0 };
   return { ...base, x: null, best: total(15) };
 }
