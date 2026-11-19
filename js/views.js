@@ -628,6 +628,56 @@ export function hwSheet(S, A) {
   </div>`;
 }
 
+// ---------------------------------------------------------------- 1.5: Kurswahl
+
+/** Alle wählbaren Kurse (vom Server; ältere Stände: aus den Stunden abgeleitet). */
+export function courseOptions(S) {
+  const snap = S.state?.snapshot;
+  if (snap?.courses?.length) return snap.courses;
+  const m = new Map();
+  for (const b of snap?.blocks || []) if (!m.has(b.su)) m.set(b.su, { su: b.su, sl: b.sl, lt: b.lt, mine: true, ag: b.kl.length > 2, n: 1, slots: [] });
+  return [...m.values()];
+}
+
+/** Vorschlag, solange noch nichts gewählt ist: alles aus dem eigenen Plan außer schulweiten AGs. */
+export function defaultCourses(S) {
+  return courseOptions(S).filter((c) => c.mine && !c.ag).map((c) => c.su);
+}
+
+export const coursesChosen = (S) => Array.isArray(S.state?.account?.settings?.courses);
+
+function courseRow(c, on) {
+  const meta = [c.su !== c.sl ? c.su.replace(/\s+/g, ' ') : '', c.lt && c.lt !== c.su ? c.lt : '', (c.slots || []).join(', ')].filter(Boolean).join(' · ');
+  return `<label class="row course" style="--h:${hue(c.su, c.sl)}"><i class="subj-dot"></i>
+    <span class="label">${esc(c.sl)}${meta ? `<small>${esc(meta)}</small>` : ''}</span>
+    <input type="checkbox" class="switch" data-act="courseToggle" data-v="${esc(c.su)}" ${on ? 'checked' : ''}></label>`;
+}
+
+export function coursesSheet(S, sel) {
+  const all = courseOptions(S);
+  const on = new Set(sel);
+  const groups = [
+    ['In deinem Stundenplan', all.filter((c) => c.mine && !c.ag)],
+    ['AGs & schulweite Angebote', all.filter((c) => c.ag)],
+    ['Weitere Kurse deiner Stufe', all.filter((c) => !c.mine && !c.ag)],
+  ].filter(([, list]) => list.length);
+  const n = sel.length;
+  return `<div class="sheet-body courses-sheet">
+    <h3 class="sheet-title">Welche Kurse hast du?</h3>
+    <p class="muted">Untis zeigt oft auch Kurse und AGs, die du gar nicht belegst. Wähl deine aus – dann siehst du nur deine Stunden und bekommst nur dafür Mitteilungen. Deine Fächer im Noten-Tab passen sich mit an.</p>
+    ${groups.map(([title, list]) => `<h4 class="group-label">${title}</h4><div class="group">${list.map((c) => courseRow(c, on.has(c.su))).join('')}</div>`).join('')}
+    ${all.length ? '' : '<p class="muted">Noch kein Stundenplan geladen – versuch es gleich noch mal.</p>'}
+    <div class="sheet-foot"><button class="btn" data-act="saveCourses" ${n && !S.busy.courses ? '' : 'disabled'}>${S.busy.courses ? '<span class="spin"></span>Wird gespeichert …' : `${n} ${n === 1 ? 'Kurs' : 'Kurse'} übernehmen`}</button></div>
+  </div>`;
+}
+
+function coursesPrompt(S) {
+  if (coursesChosen(S) || !courseOptions(S).length) return '';
+  return `<button class="course-prompt" data-act="openCourses">
+    <span><b>Welche Kurse hast du?</b><small>Damit fremde Kurse und AGs nicht als Ausfall auftauchen.</small></span>
+    <em>Auswählen</em></button>`;
+}
+
 function plan(S) {
   const blocks = S.state?.snapshot?.blocks || [];
   const name = firstName(S);
@@ -643,6 +693,7 @@ function plan(S) {
   const canPrev = stepDay(S, -1) && stepDay(S, -1) !== days[0];
   const canNext = !!stepDay(S, 1);
   return `${head}
+    ${coursesPrompt(S)}
     ${hero(S, blocks)}
     ${planHint(S, blocks)}
     <div class="seg view-seg" role="tablist">${[[1, '1 Tag'], [3, '3 Tage'], [5, 'Woche']].map(([k, l]) => `<button role="tab" class="${view === k ? 'on' : ''}" data-act="view" data-v="${k}" aria-selected="${view === k}">${l}</button>`).join('')}</div>
@@ -929,6 +980,7 @@ function me(S) {
     <h4 class="section-title">Untis</h4>
     <div class="group">
       <div class="row"><span class="r-ico">${icon('school')}</span><span class="label">${esc(acc.schoolName || '')}<small>${esc(acc.user || '')} · ${acc.authKind === 'secret' ? 'mit Schlüssel' : 'mit Passwort'}</small></span></div>
+      <button class="row link" data-act="openCourses"><span class="r-ico">${icon('grade')}</span><span class="label">Meine Kurse<small>${coursesChosen(S) ? `${acc.settings.courses.length} ausgewählt` : 'Noch nicht ausgewählt'}</small></span>${icon('right', 'chev')}</button>
       <button class="row link" data-act="refresh" ${S.busy.refresh ? 'disabled' : ''}><span class="r-ico">${icon('refresh')}</span><span class="label">Jetzt prüfen<small>${statusTxt}</small></span>${S.busy.refresh ? '<span class="spin"></span>' : icon('right', 'chev')}</button>
       ${acc.status === 'auth_failed' ? `<button class="row link" data-act="relogin"><span class="r-ico warn">${icon('key')}</span><span class="label">Neu anmelden</span>${icon('right', 'chev')}</button>` : ''}
     </div>
@@ -976,7 +1028,7 @@ export function lessonSheet(b, hw = []) {
     ['Zeit', `${b.p ? esc(fmtPeriod(b.p)) + '<br>' : ''}${hhmm(b.s)}–${hhmm(b.e)} Uhr`],
     b.ro.length ? ['Raum', esc(b.ro.join(', '))] : null,
     b.te.length ? ['Lehrkraft', esc(b.te.join(', '))] : null,
-    b.kl.length ? ['Klasse/Kurs', esc(b.kl.join(', '))] : null,
+    b.kl.length ? [b.kl.length > 1 ? 'Klassen' : 'Klasse/Kurs', esc(b.kl.length > 6 ? b.kl.slice(0, 5).join(', ') + ` und ${b.kl.length - 5} weitere` : b.kl.join(', '))] : null,
     b.lt ? ['Stundentext', esc(b.lt)] : null,
     ...b.notes.map((x) => ['Änderung', esc(x)]),
     b.info ? ['Info', esc(b.info)] : null,

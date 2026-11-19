@@ -651,9 +651,9 @@ details.row p { margin: 0; padding: 0 16px 16px 61px; color: var(--text-2); font
 .cal-nav .icon-btn[disabled] { opacity: .25; }
 .cal { position: relative; margin-bottom: 8px; }
 .cal-head {
-  position: sticky; top: 0; z-index: 8; display: grid; gap: 4px;
+  position: sticky; top: env(safe-area-inset-top); z-index: 8; display: grid; gap: 4px;
   grid-template-columns: 44px repeat(var(--n), minmax(0, 1fr));
-  padding: calc(env(safe-area-inset-top) + 4px) 0 6px; margin-top: calc(-1 * env(safe-area-inset-top));
+  padding: 4px 0 6px;
   background: linear-gradient(var(--bg) 82%, transparent);
 }
 .ch { border: 0; background: none; padding: 2px 0; display: flex; flex-direction: column; align-items: center; color: var(--text-3); font: 600 11px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
@@ -944,3 +944,26 @@ textarea.input.hw-input { height: auto; min-height: 84px; padding: 12px 14px; re
 .screen-aufgaben .exams { margin-top: 20px; }
 .badge.inline { position: static; margin-right: 4px; }
 .hist-sheet .page-sub { margin: 0 0 10px; }
+
+/* ---------- 1.5: Kurswahl ---------- */
+.course-prompt {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  margin: 10px 0 14px; padding: 13px 14px 13px 16px; border: 0; border-radius: 18px; text-align: left; color: var(--text);
+  background: var(--card); box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--accent) 55%, transparent), 0 8px 22px -16px var(--accent);
+}
+.course-prompt b { display: block; font-size: 15.5px; font-weight: 800; }
+.course-prompt small { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; }
+.course-prompt em { flex: none; font-style: normal; font-weight: 750; font-size: 14px; padding: 8px 13px; border-radius: 99px; color: #fff; background: var(--accent); }
+.courses-sheet .group-label { margin: 18px 4px 8px; }
+.courses-sheet .row.course { min-height: 54px; padding: 10px 14px; cursor: pointer; }
+.courses-sheet .row.course .subj-dot { width: 12px; height: 12px; border-radius: 4px; }
+.courses-sheet .row.course small { font-size: 12.5px; }
+.courses-sheet .sheet-foot { position: sticky; bottom: 0; margin-top: 14px; padding: 12px 0 4px; background: linear-gradient(transparent, var(--bg-elev) 30%); }
+.courses-sheet .sheet-foot .btn { width: 100%; }
+
+/* 1.5: Statusleiste (iPhone) beim Scrollen abdecken, statt den Tageskopf nach oben zu ziehen */
+body::after {
+  content: ''; position: fixed; left: 0; right: 0; top: 0; z-index: 30; pointer-events: none;
+  height: env(safe-area-inset-top); background: var(--bg); opacity: 0; transition: opacity .2s;
+}
+html.scrolled body::after { opacity: 1; }

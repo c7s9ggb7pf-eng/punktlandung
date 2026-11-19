@@ -49,7 +49,7 @@ function demoBuild(blocks, mon, tomorrow, next) {
       school: 'demo', schoolName: 'Gymnasium am See', server: 'demo.webuntis.com', user: 'emil.k', name: 'Emil',
       className: 'Q2', authKind: 'password', status: 'ok', lastError: null, lastCheckAt: ago(1), lastSuccessAt: ago(1), settings: { restore: true },
     },
-    snapshot: { fetchedAt: ago(1), from: mon, to: addDays(mon, 11), blocks },
+    snapshot: { fetchedAt: ago(1), from: mon, to: addDays(mon, 11), blocks, courses: demoCourses(blocks) },
     homework: demoHomework(blocks),
     stats: {
       since: addDays(mon, -42), total: 23, upcoming: 3, days: 14, sleepIn: 4, fullDays: 1, earlyEnd: 3,
@@ -108,4 +108,15 @@ function demoHomework(blocks) {
     { id: 'h2', subject: 'Englisch LK', su: 'E', text: 'Read chapter 3 of the novel, write a short summary (150 words)', due: next('Englisch LK'), remindAt: at(next('Englisch LK'), 17), done: false },
     { id: 'h3', subject: 'Deutsch', su: 'D', text: 'Gedichtanalyse fertigstellen', due: addDays(t, -1), remindAt: null, done: false },
   ].sort((a, b) => a.due.localeCompare(b.due));
+}
+
+function demoCourses(blocks) {
+  const own = [...new Map(blocks.map((b) => [b.su, { su: b.su, sl: b.sl, mine: true, ag: false, n: 2, slots: [] }])).values()];
+  return [
+    ...own,
+    { su: 'AG CHO', sl: 'Luise singt', mine: true, ag: true, n: 1, slots: ['Do 7.'] },
+    { su: 'BBand', sl: 'BigBand', lt: 'Big Band ohne Projektkurs', mine: true, ag: true, n: 1, slots: ['Fr 8.'] },
+    { su: 'PH G1', sl: 'Physik', lt: 'GK 3 Q2', mine: false, ag: false, n: 3, slots: ['Mo 5.', 'Do 3.'] },
+    { su: 'IF G1', sl: 'Informatik', lt: 'GK 8 Q2', mine: false, ag: false, n: 3, slots: ['Di 7.', 'Fr 3.'] },
+  ];
 }

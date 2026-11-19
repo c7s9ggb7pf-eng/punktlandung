@@ -42,9 +42,38 @@ export function subjectsFromBlocks(blocks) {
   for (const b of blocks || []) {
     const key = (b.sl || b.su || '').trim();
     if (!key || seen.has(key)) continue;
-    seen.set(key, { id: uid(), name: key, su: b.su || key, lk: /\bLK\b|leistungs/i.test(`${b.sl} ${b.su}`), abi: 0 });
+    seen.set(key, { id: uid(), name: key.replace(/\s+(LK|GK)$/i, ''), su: b.su || key, lk: /\bLK\b|leistungs/i.test(`${b.sl} ${b.su}`), abi: 0 });
   }
   return [...seen.values()].sort((a, b) => Number(b.lk) - Number(a.lk) || a.name.localeCompare(b.name, 'de'));
+}
+
+/**
+ * Noten-Fächer an die Kurswahl anpassen: gewählte Kurse ergänzen (LK erkannt),
+ * leere Fächer ohne passenden Kurs entfernen. Fächer mit eingetragenen Noten bleiben immer.
+ */
+export function syncSubjects(G, courses) {
+  const clean = (n) => String(n || '').replace(/\s+(LK|GK|ZK)$/i, '').trim();
+  const key = (n) => clean(n).toLowerCase();
+  const want = new Map();
+  for (const c of courses) {
+    const k = key(c.sl);
+    if (!k || want.has(k)) continue;
+    want.set(k, { name: clean(c.sl), su: c.su, lk: /\bLK$/i.test(c.sl) || /\sL\d*$/.test(c.su) });
+  }
+  const used = (s) => G.entries.some((e) => e.sid === s.id) || G.exams?.[s.id] != null;
+  const keep = [];
+  for (const s of G.subjects) {
+    const w = want.get(key(s.name)) || [...want.values()].find((x) => x.su === s.su);
+    if (w) {
+      Object.assign(s, { name: w.name, su: w.su, lk: s.lk || w.lk });
+      want.delete(key(w.name));
+      keep.push(s);
+    } else if (used(s)) keep.push(s);
+  }
+  for (const w of want.values()) keep.push({ id: uid(), name: w.name, su: w.su, lk: w.lk, abi: 0 });
+  G.subjects = keep.sort((a, b) => Number(b.lk) - Number(a.lk) || a.name.localeCompare(b.name, 'de'));
+  G._seeded = true;
+  return G;
 }
 
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);

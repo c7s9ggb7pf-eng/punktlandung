@@ -294,6 +294,13 @@ function stepCal(dir) {
   render();
 }
 
+/** Noch keine Kurse gewählt → einmal pro Start das Auswahl-Blatt zeigen. */
+function askCoursesOnce() {
+  if (S.demo || S._askedCourses || V.coursesChosen(S) || !V.courseOptions(S).length || document.querySelector('.sheet')) return;
+  S._askedCourses = true;
+  setTimeout(() => { if (S.screen === 'main' && !document.querySelector('.sheet')) actions.openCourses(); }, 600);
+}
+
 function saveGrades() {
   if (!S.demo) store.grades = S.grades;
 }
@@ -435,6 +442,7 @@ const actions = {
     S.screen = 'main';
     S.tab = 'plan';
     render();
+    askCoursesOnce();
   },
   tab(el) {
     S.tab = el.dataset.v;
@@ -602,6 +610,49 @@ const actions = {
       toast(e.message, 4200);
     }
     S.busy.push = false;
+    render();
+  },
+  // ---------- 1.5: Kurswahl ----------
+  openCourses() {
+    S.cs = V.coursesChosen(S) ? [...S.state.account.settings.courses] : V.defaultCourses(S);
+    S._askedCourses = true;
+    openSheet(V.coursesSheet(S, S.cs));
+  },
+  courseToggle(el) {
+    const su = el.dataset.v;
+    S.cs = el.checked ? [...new Set([...S.cs, su])] : S.cs.filter((x) => x !== su);
+    haptic(5);
+    const btn = document.querySelector('.courses-sheet [data-act="saveCourses"]');
+    if (btn) {
+      btn.disabled = !S.cs.length;
+      btn.textContent = `${S.cs.length} ${S.cs.length === 1 ? 'Kurs' : 'Kurse'} übernehmen`;
+    }
+  },
+  async saveCourses() {
+    if (S.busy.courses || !S.cs?.length) return;
+    const opts = V.courseOptions(S);
+    const chosen = opts.filter((c) => S.cs.includes(c.su));
+    if (S.demo) {
+      S.state.account.settings = { ...S.state.account.settings, courses: [...S.cs] };
+      S.state.snapshot.blocks = S.state.snapshot.blocks.filter((b) => S.cs.includes(b.su));
+    } else {
+      S.busy.courses = true;
+      updateSheet(V.coursesSheet(S, S.cs));
+      try {
+        const r = await api('settings', { settings: { courses: S.cs } }, { timeout: 60000 });
+        setState(r.state);
+      } catch (e) {
+        S.busy.courses = false;
+        updateSheet(V.coursesSheet(S, S.cs));
+        return toast(e.message);
+      }
+      S.busy.courses = false;
+    }
+    G.syncSubjects(S.grades, chosen.filter((c) => !c.ag));
+    saveGrades();
+    closeSheet();
+    haptic(12);
+    toast(`Gespeichert – ab jetzt nur noch deine ${chosen.length} Kurse.`);
     render();
   },
   async toggleSetting(el) {
@@ -812,6 +863,7 @@ async function boot() {
     render();
     await loadState();
     syncPush();
+    askCoursesOnce();
   } else {
     S.screen = 'ob';
     render();
@@ -823,5 +875,8 @@ async function boot() {
     if (document.visibilityState === 'visible' && S.screen === 'main' && !document.querySelector('.sheet')) render();
   }, 60_000);
 }
+
+// Statusleiste abdecken, sobald gescrollt wird (sonst laufen Inhalte unter Uhrzeit und Akku durch).
+addEventListener('scroll', () => document.documentElement.classList.toggle('scrolled', scrollY > 24), { passive: true });
 
 boot();
