@@ -56,7 +56,6 @@ function afterRender(changed) {
     root.querySelector('.cal')?.animate([{ opacity: 0, transform: `translateX(${S._calAnim * 18}px)` }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.9,.25,1)' });
     S._calAnim = 0;
   }
-  if (S.screen === 'main' && S.tab === 'verlauf') markEventsSeen();
 }
 
 function afterEnter() {
@@ -702,6 +701,19 @@ const actions = {
     if (S.demo) return;
     try { setState((await api('hwUpdate', { id, done: true })).state); } catch (e) { h.done = false; render(); toast(e.message); }
   },
+  openHistory() {
+    openSheet(V.historySheet(S));
+    markEventsSeen();
+  },
+  async hwUndo(el) {
+    const id = el.dataset.v;
+    const h = (S.state?.homework || []).find((x) => x.id === id);
+    if (!h) return;
+    h.done = false;
+    render();
+    if (S.demo) return;
+    try { setState((await api('hwUpdate', { id, done: false })).state); render(); } catch (e) { h.done = true; render(); toast(e.message); }
+  },
   async hwDelete() {
     const id = S.hw?.id;
     if (!id) return;
@@ -755,6 +767,7 @@ function openFromUrl(url) {
       S.tab = 'plan';
     } else if (u.searchParams.has('ich')) S.tab = 'ich';
     else if (u.searchParams.has('noten')) S.tab = 'noten';
+    else if (u.searchParams.has('hw')) S.tab = 'aufgaben';
   } catch { /* egal */ }
 }
 

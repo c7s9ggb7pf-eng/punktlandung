@@ -530,6 +530,57 @@ function dueLabel(d) {
   return `${WD[weekday(d)]}, ${Number(d.slice(8))}.${Number(d.slice(5, 7))}.`;
 }
 
+function hwItem(h) {
+  const late = !h.done && h.due < today();
+  return `<div class="hw-item ${late ? 'late' : ''} ${h.done ? 'done' : ''}" style="--h:${hue(h.su, h.subject)}">
+      <button class="hw-check" data-act="${h.done ? 'hwUndo' : 'hwDone'}" data-v="${esc(h.id)}" aria-label="${h.done ? 'Wieder offen' : 'Erledigt'}">${h.done ? icon('check') : ''}</button>
+      <button class="hw-body" data-act="hwEdit" data-v="${esc(h.id)}">
+        <span class="hw-top"><b>${esc(h.subject.replace(/\s+(LK|GK)$/i, ''))}</b><em>${h.done ? 'erledigt' : esc(dueLabel(h.due))}</em></span>
+        <span class="hw-text">${esc(h.text)}</span>
+      </button>
+    </div>`;
+}
+
+/** Tab „Aufgaben“: Hausaufgaben nach Fälligkeit + Klausuren + Erledigtes. */
+function tasks(S) {
+  const blocks = S.state?.snapshot?.blocks || [];
+  const all = S.state?.homework || [];
+  const open = all.filter((h) => !h.done);
+  const t = today();
+  const sun = addDays(t, (7 - weekday(t)) % 7);
+  const groups = [
+    ['Überfällig', open.filter((h) => h.due < t)],
+    ['Heute', open.filter((h) => h.due === t)],
+    ['Morgen', open.filter((h) => h.due === addDays(t, 1))],
+    ['Diese Woche', open.filter((h) => h.due > addDays(t, 1) && h.due <= sun)],
+    ['Später', open.filter((h) => h.due > sun && h.due > addDays(t, 1))],
+  ].filter(([, l]) => l.length);
+  const done = all.filter((h) => h.done);
+  const list = groups.length
+    ? groups.map(([label, l]) => `<h4 class="group-label ${label === 'Überfällig' ? 'warn' : ''}">${label} · ${l.length}</h4><div class="hw tasks-list">${l.map(hwItem).join('')}</div>`).join('')
+    : `<div class="empty"><b>Alles erledigt</b><span>Neue Hausaufgaben trägst du hier ein – oder direkt an einer Stunde im Plan.</span></div>`;
+  return `<header class="top">${wordmark()}</header>
+    <h1 class="title">Aufgaben</h1>
+    <button class="btn" data-act="hwNew">${icon('plus')}Hausaufgabe eintragen</button>
+    ${list}
+    ${examsCard(blocks)}
+    ${done.length ? `<h4 class="group-label">Erledigt</h4><div class="hw tasks-list">${done.map(hwItem).join('')}</div>` : ''}`;
+}
+
+/** Eine Zeile über dem Stundenplan: was bald fällig ist. */
+function planHint(S, blocks) {
+  const t = today();
+  const open = (S.state?.homework || []).filter((h) => !h.done);
+  const soon = open.filter((h) => h.due <= addDays(t, 1));
+  const ex = blocks.find((b) => b.st === 'exam' && b.d >= t && daysFromToday(b.d) <= 7);
+  const parts = [];
+  if (soon.length) parts.push(`<b>${soon.length}</b> ${soon.length === 1 ? 'Hausaufgabe' : 'Hausaufgaben'} bis morgen`);
+  else if (open.length) parts.push(`<b>${open.length}</b> offene ${open.length === 1 ? 'Hausaufgabe' : 'Hausaufgaben'}`);
+  if (ex) { const d = daysFromToday(ex.d); parts.push(`Klausur ${esc(ex.sl.replace(/\s+(LK|GK)$/i, ''))} ${d === 0 ? 'heute' : d === 1 ? 'morgen' : `in ${d} Tagen`}`); }
+  if (!parts.length) return '';
+  return `<button class="plan-hint" data-act="tab" data-v="aufgaben"><span>${parts.join(' · ')}</span>${icon('right', 'chev')}</button>`;
+}
+
 function homeworkCard(S) {
   const open = (S.state?.homework || []).filter((h) => !h.done);
   const items = open.slice(0, 6).map((h) => {
@@ -593,8 +644,7 @@ function plan(S) {
   const canNext = !!stepDay(S, 1);
   return `${head}
     ${hero(S, blocks)}
-    ${examsCard(blocks)}
-    ${homeworkCard(S)}
+    ${planHint(S, blocks)}
     <div class="seg view-seg" role="tablist">${[[1, '1 Tag'], [3, '3 Tage'], [5, 'Woche']].map(([k, l]) => `<button role="tab" class="${view === k ? 'on' : ''}" data-act="view" data-v="${k}" aria-selected="${view === k}">${l}</button>`).join('')}</div>
     <div class="cal-nav">
       <button class="icon-btn ghost" data-act="step" data-v="-1" aria-label="Zurück" ${canPrev ? '' : 'disabled'}>${icon('left')}</button>
@@ -812,6 +862,11 @@ function history(S) {
   return `<header class="top">${wordmark()}</header><h1 class="title">Verlauf</h1><p class="page-sub">Alles, was Punktlandung dir gemeldet hat.</p>${statsCard(S.state?.stats)}${body}`;
 }
 
+export function historySheet(S) {
+  const html = history(S).replace(/^<header class="top">.*?<\/header>/s, '').replace('<h1 class="title">Verlauf</h1>', '<h3 class="sheet-title">Verlauf</h3>');
+  return `<div class="sheet-body hist-sheet">${html}<button class="btn soft" data-act="closeSheet">Schließen</button></div>`;
+}
+
 // ---------------------------------------------------------------- Ich
 
 export const ACCENTS = [
@@ -860,6 +915,7 @@ function me(S) {
 
     <h4 class="section-title">Mitteilungen</h4>
     <div class="group">
+      <button class="row link" data-act="openHistory"><span class="r-ico">${icon('bell')}</span><span class="label">Verlauf & Freistunden-Rückblick<small>${(S.state?.events || []).length} Meldungen</small></span>${(() => { const u = (S.state?.events || []).filter((e) => e.id > (S.lastSeenEvent || 0) && e.kind !== 'test').length; return u ? `<em class="badge inline">${u}</em>` : ''; })()}${icon('right', 'chev')}</button>
       ${pushRow(S)}
       <label class="row"><span class="label">„Doch Unterricht“ melden<small>Wenn ein Ausfall zurückgenommen wird</small></span>
         <input type="checkbox" class="switch" data-act="toggleSetting" data-k="restore" ${set.restore !== false ? 'checked' : ''}></label>
@@ -903,13 +959,14 @@ function me(S) {
 
 export function main(S) {
   const tab = S.tab;
-  const unseen = (S.state?.events || []).filter((e) => e.id > (S.lastSeenEvent || 0) && e.kind !== 'test').length;
-  const content = tab === 'verlauf' ? history(S) : tab === 'ich' ? me(S) : tab === 'noten' ? noten(S) : plan(S);
-  const tabs = [['plan', 'plan', 'Plan'], ['noten', 'grade', 'Noten'], ['verlauf', 'bell', 'Verlauf'], ['ich', 'user', 'Ich']];
+  const t = today();
+  const dueSoon = (S.state?.homework || []).filter((h) => !h.done && h.due <= addDays(t, 1)).length;
+  const content = tab === 'aufgaben' ? tasks(S) : tab === 'ich' || tab === 'verlauf' ? me(S) : tab === 'noten' ? noten(S) : plan(S);
+  const tabs = [['plan', 'plan', 'Plan'], ['noten', 'grade', 'Noten'], ['aufgaben', 'tasks', 'Aufgaben'], ['ich', 'user', 'Ich']];
   return `<main class="screen screen-${tab}">${content}</main>
     <nav class="tabbar" aria-label="Bereiche">${tabs.map(([k, ic, label]) => `
       <button class="tab ${tab === k ? 'on' : ''}" data-act="tab" data-v="${k}" aria-current="${tab === k ? 'page' : 'false'}" aria-label="${label}">
-        ${icon(ic)}<span>${label}</span>${k === 'verlauf' && unseen && tab !== 'verlauf' ? `<em class="badge">${unseen}</em>` : ''}
+        ${icon(ic)}<span>${label}</span>${k === 'aufgaben' && dueSoon && tab !== 'aufgaben' ? `<em class="badge">${dueSoon}</em>` : ''}
       </button>`).join('')}
     </nav>`;
 }

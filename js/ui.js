@@ -26,6 +26,7 @@ const P = {
   moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  tasks: '<rect x="4" y="4" width="16" height="16" rx="4.5"/><path d="M8.2 12.4l2.6 2.6 5-5.4"/>',
   grade: '<path d="M5 20V11M12 20V5M19 20v-6"/>',
 };
 
