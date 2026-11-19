@@ -1,7 +1,7 @@
 // Punktlandung – Start, Zustand und Aktionen.
 import {
   store, api, ApiError, idbGet, enablePush, currentSubscription, pushSupported, permission, platform, isIOS, isStandalone,
-  today, nowMin,
+  today, nowMin, dayWord,
   addDays, parseDay,
 } from './lib.js';
 import * as V from './views.js';
@@ -323,6 +323,37 @@ function fitHj() {
   if (S.add.hj !== 'abi' && !ok.includes(S.add.hj)) S.add.hj = ok[ok.length - 1];
 }
 
+const blockByKey = (k) => (S.state?.snapshot?.blocks || []).find((b) => b.ks?.[0] === k);
+const hhmmLocal = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+/** Kalenderdatei (iCalendar): Stunden ohne Ausfälle, Klausuren hervorgehoben, offene Hausaufgaben als Ganztagstermine. */
+function buildIcs() {
+  const blocks = S.state?.snapshot?.blocks || [];
+  if (!blocks.length) return '';
+  const esc = (t) => String(t || '').replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => '\\' + c).replace(/\n/g, '\\n');
+  const utc = (day, min) => { const d = parseDay(day); d.setHours(0, min, 0, 0); return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); };
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const ev = [];
+  for (const b of blocks) {
+    if (b.st === 'cancel' || b.d < today()) continue;
+    const title = (b.st === 'exam' ? 'Klausur: ' : '') + b.sl;
+    ev.push(['BEGIN:VEVENT', `UID:pl-${b.ks[0].replace(/[^A-Za-z0-9]/g, '')}@punktlandung`, `DTSTAMP:${stamp}`,
+      `DTSTART:${utc(b.d, b.s)}`, `DTEND:${utc(b.d, b.e)}`, `SUMMARY:${esc(title)}`,
+      b.ro.length ? `LOCATION:${esc('Raum ' + b.ro.join(', '))}` : '',
+      b.notes.length || b.info ? `DESCRIPTION:${esc([...b.notes, b.info].filter(Boolean).join(' · '))}` : '',
+      b.st === 'exam' ? 'BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:Klausur morgen\r\nTRIGGER:-PT15H\r\nEND:VALARM' : '',
+      'END:VEVENT'].filter(Boolean).join('\r\n'));
+  }
+  for (const h of S.state?.homework || []) {
+    if (h.done) continue;
+    const d = h.due.replace(/-/g, '');
+    const e = addDays(h.due, 1).replace(/-/g, '');
+    ev.push(['BEGIN:VEVENT', `UID:pl-hw-${h.id}@punktlandung`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${e}`,
+      `SUMMARY:${esc('HA ' + h.subject.replace(/\s+(LK|GK)$/i, '') + ': ' + h.text)}`, 'END:VEVENT'].join('\r\n'));
+  }
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Punktlandung//DE', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Punktlandung', ...ev, 'END:VCALENDAR'].join('\r\n') + '\r\n';
+}
+
 function saveGrades() {
   if (!S.demo) store.grades = S.grades;
 }
@@ -581,6 +612,65 @@ const actions = {
     } else closeSheet();
     render();
   },
+  // ---------- 1.7: Lernen, Teilen, Kalender, Countdown ----------
+  async examStudy(el) {
+    const b = blockByKey(el.dataset.i);
+    if (!b) return;
+    const list = S.state?.homework || [];
+    if (list.some((h) => !h.done && h.subject === b.sl && h.due === b.d && /lernen/i.test(h.text))) return toast('Die Lern-Erinnerung gibt es schon.');
+    const at = (day, h, m) => { const d = parseDay(day); d.setHours(h, m, 0, 0); return d; };
+    let remind = at(addDays(b.d, -3), 17, 0);
+    if (remind < new Date()) remind = at(addDays(b.d, -1), 17, 0);
+    if (remind < new Date()) remind = null;
+    const body = { subject: b.sl, su: b.su, text: 'Für die Klausur lernen', due: b.d, remindAt: remind ? remind.toISOString() : null };
+    const msg = remind ? `Erinnerung ${V.remindLabel(remind)} – steht jetzt unter Aufgaben` : 'Steht jetzt unter Aufgaben';
+    if (S.demo) {
+      list.push({ ...body, id: 'd' + Date.now(), done: false });
+      S.state.homework = list;
+    } else {
+      try { setState((await api('hwAdd', body)).state); } catch (e) { return toast(e.message); }
+    }
+    closeSheet();
+    haptic(12);
+    render();
+    toast(msg, 3200);
+  },
+  async shareCancel(el) {
+    const b = blockByKey(el.dataset.i);
+    if (!b) return;
+    const w0 = dayWord(b.d);
+    const w = /^(Heute|Morgen|Übermorgen)$/.test(w0) ? w0.toLowerCase() : w0.replace(/^Am /, 'am ');
+    const when = `${w}${b.p ? ` in der ${b.p.replace(/(\d+)/g, '$1.')} Stunde` : ` um ${hhmmLocal(b.s)}`}`;
+    const text = `${b.sl} fällt ${when} aus (laut Untis)${b.info ? ` – ${b.info}` : ''}.`;
+    try {
+      if (navigator.share) await navigator.share({ text: text + ' – gesehen mit Punktlandung', url: location.origin + location.pathname });
+      else { await navigator.clipboard.writeText(text); toast('Text kopiert – jetzt einfach einfügen.'); }
+    } catch (e) { if (e?.name !== 'AbortError') toast('Teilen ging nicht.'); }
+  },
+  async exportIcs() {
+    const ics = buildIcs();
+    if (!ics) return toast('Noch kein Stundenplan geladen.');
+    const file = new File([ics], 'punktlandung.ics', { type: 'text/calendar' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Punktlandung – Stundenplan' });
+      else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file);
+        a.download = 'punktlandung.ics';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
+      toast('Öffne die Datei und tippe „Alle hinzufügen“. Ausfälle sind schon herausgenommen.', 4200);
+    } catch (e) { if (e?.name !== 'AbortError') toast('Export ging nicht: ' + (e?.message || e)); }
+  },
+  abiDate() { openSheet(V.abiDateSheet(S.grades)); },
+  abiDateClear() {
+    delete S.grades.abiDate;
+    saveGrades();
+    closeSheet();
+    render();
+  },
+
   // ---------- Noten sichern ----------
   async backup() {
     const data = { app: 'punktlandung', v: 1, at: new Date().toISOString(), grades: S.grades };
@@ -896,6 +986,12 @@ const actions = {
 };
 
 const inputs = {
+  abiDate(el) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
+    S.grades.abiDate = el.value;
+    saveGrades();
+    render();
+  },
   bllTitle(el) {
     S.grades.bll.title = el.value.trim();
     saveGrades();

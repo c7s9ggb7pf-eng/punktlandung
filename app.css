@@ -1003,3 +1003,19 @@ html.scrolled body::after { opacity: 1; }
 .exam-ask b { font-size: 15px; }
 .exam-ask .x { border: 0; background: none; color: var(--text-3); padding: 4px; }
 .exam-ask .x .ico { width: 16px; height: 16px; }
+
+/* ---------- 1.7: Notenverlauf, Abi-Countdown ---------- */
+.trend { margin: 12px 0 4px; padding: 10px 10px 8px; border-radius: 16px; background: var(--card-2); }
+.trend svg { display: block; width: 100%; height: auto; overflow: visible; }
+.trend .tr-line { fill: none; stroke: oklch(62% .17 var(--h)); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.trend .tr-dot { fill: var(--card); stroke: oklch(62% .17 var(--h)); stroke-width: 2.5; }
+.trend .tr-dot.est { stroke-dasharray: 3 2; }
+.trend .tr-5 { stroke: var(--coral); stroke-width: 1; stroke-dasharray: 4 4; opacity: .5; }
+.trend text { font: 700 11px var(--mono); fill: var(--text); }
+.trend text.tr-hj { font-weight: 500; font-size: 9.5px; fill: var(--text-3); }
+.trend small { display: block; margin-top: 4px; color: var(--text-2); font-size: 13px; text-align: center; }
+.countdown { display: flex; align-items: center; gap: 14px; width: 100%; margin: 10px 0 4px; padding: 14px 16px; border: 0; border-radius: 20px; text-align: left; color: #fff;
+  background: linear-gradient(120deg, var(--g1, var(--accent)), var(--g2, var(--accent)) 60%, var(--g3, var(--accent))); box-shadow: 0 12px 28px -18px var(--accent); }
+.countdown > b { font: 800 38px/1 var(--display); letter-spacing: -.02em; }
+.countdown span { font-weight: 700; font-size: 15px; line-height: 1.25; }
+.countdown small { display: block; font-weight: 500; opacity: .85; font-size: 12.5px; margin-top: 2px; }

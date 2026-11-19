@@ -842,7 +842,10 @@ function noten(S) {
       <span class="sn"><i style="--h:${hue(s.su, s.name)}"></i><span><b>${esc(s.name)}</b>${tag ? `<small>${tag}</small>` : ''}</span></span>
       ${cells}<span class="avg">${a == null ? '–' : fmt1(a)}</span></button>`;
   }).join('');
-  return `${head}${examPrompts(S, G)}${hint}${backupTip}${summary}${r ? admissionCard(G, r) : ''}${r ? goalCard(G, S.state?.snapshot?.blocks) : ''}
+  const days = G.abiDate ? daysFromToday(G.abiDate) : null;
+  const countdown = days != null && days >= 0
+    ? `<button class="countdown" data-act="abiDate"><b>${days}</b><span>${days === 1 ? 'Tag' : 'Tage'} bis zur ersten Abiprüfung<small>${esc(dateLong(G.abiDate))} · noch ${Math.floor(days / 7)} Wochen</small></span></button>` : '';
+  return `${head}${countdown}${examPrompts(S, G)}${hint}${backupTip}${summary}${r ? admissionCard(G, r) : ''}${r ? goalCard(G, S.state?.snapshot?.blocks) : ''}
     <section class="card subjects">
       <div class="subj head"><span class="sn">Fach</span>${HJ.map((h, i) => `<span class="${i === cur ? 'cur' : ''}">${h}</span>`).join('')}<span class="avg">Ø</span></div>
       ${rows}
@@ -851,6 +854,7 @@ function noten(S) {
     <button class="btn" data-act="addGrade">${icon('plus')}Note eintragen</button>
     <button class="btn link" data-act="addSubject">Fach hinzufügen (z. B. nur Q1)</button>
     ${G.bll?.on ? '' : '<button class="btn link" data-act="bllOpen">Besondere Lernleistung hinzufügen (5. Abiturfach)</button>'}
+    ${G.abiDate ? '' : '<button class="btn link" data-act="abiDate">Abi-Countdown: Datum der ersten Prüfung eintragen</button>'}
     <p class="fine center">Deine Noten bleiben nur auf diesem Handy. Hochrechnung nach APO-GOSt NRW, vereinfacht – ohne Gewähr.</p>`;
 }
 
@@ -877,11 +881,30 @@ export function subjectSheet(G, sid) {
     <div class="field-row"><span>Abiturfach</span><div class="chips">${[0, 1, 2, 3, 4].map((n) => `<button class="chip ${s.abi === n ? 'on' : ''}" data-act="setAbi" data-sid="${sid}" data-v="${n}">${n ? n + '.' : 'nein'}</button>`).join('')}</div></div>
     ${s.abi && ex == null && abi(G) ? (() => { const tg = G.goal ?? 1.5; const x = examNeed(G, sid, tg); return `<p class="muted small-note">${x == null ? `Für ${fmt1(tg)} reicht es mit dieser Prüfung allein nicht – schau in den Ziel-Rechner.` : `Für eine ${fmt1(tg)} brauchst du in dieser Prüfung mindestens <b>${x} Punkte (${noteOf(x)})</b> – wenn der Rest so bleibt.`}</p>`; })() : ''}
     ${s.abi ? `<div class="field-row"><span>Abiturprüfung</span>${ex != null ? `<b class="pt ${tone(ex)}">${ex}</b><button class="mini" data-act="delExam" data-sid="${sid}">Löschen</button>` : `<button class="mini acc" data-act="addGrade" data-sid="${sid}" data-hj="abi">Punkte eintragen</button>`}</div>` : ''}
+    ${trend(G, s)}
     <div class="hjs">${hjs}</div>
     <button class="btn soft" data-act="closeSheet">Fertig</button>
     <button class="btn link" data-act="delSubject" data-v="${sid}">${S_CONFIRM === sid ? 'Wirklich entfernen? Nochmal tippen' : 'Fach entfernen'}</button>
   </div>`;
 }
+/** Kleiner Verlauf: Punkte je Halbjahr als Linie (ab 2 Halbjahren mit Noten). */
+function trend(G, s) {
+  const pts = hjsOf(s).map((hj) => [hj, hjResult(G, s.id, hj)]).filter(([, r]) => r);
+  if (pts.length < 2) return '';
+  const W = 260;
+  const H = 70;
+  const x = (hj) => 16 + (hj / 3) * (W - 32);
+  const y = (p) => 8 + (1 - p / 15) * (H - 22);
+  const line = pts.map(([hj, r], i) => `${i ? 'L' : 'M'}${x(hj).toFixed(1)} ${y(r.pts).toFixed(1)}`).join(' ');
+  const d = pts[pts.length - 1][1].pts - pts[0][1].pts;
+  return `<div class="trend"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Notenverlauf">
+      <line x1="10" x2="${W - 10}" y1="${y(5)}" y2="${y(5)}" class="tr-5"/>
+      <path d="${line}" class="tr-line"/>
+      ${pts.map(([hj, r]) => `<circle cx="${x(hj)}" cy="${y(r.pts)}" r="4.5" class="tr-dot ${r.est ? 'est' : ''}"/><text x="${x(hj)}" y="${y(r.pts) - 9}" text-anchor="middle">${r.pts}</text>`).join('')}
+      ${HJ.map((h, hj) => `<text x="${x(hj)}" y="${H - 2}" text-anchor="middle" class="tr-hj">${h}</text>`).join('')}
+    </svg><small>${d > 0 ? `+${d} ${d === 1 ? 'Punkt' : 'Punkte'} seit ${HJ[pts[0][0]]} – stark.` : d < 0 ? `${d} ${d === -1 ? 'Punkt' : 'Punkte'} seit ${HJ[pts[0][0]]}.` : 'Konstant geblieben.'}</small></div>`;
+}
+
 let S_CONFIRM = null;
 export const confirmDelete = (sid) => { S_CONFIRM = sid; };
 
@@ -921,6 +944,16 @@ export function bllSheet(G) {
     <button class="btn soft" data-act="closeSheet">Fertig</button>
     ${b.pts != null ? '<button class="btn link" data-act="bllPts" data-v="">Punkte löschen</button>' : ''}
     <button class="btn link" data-act="bllRemove">Besondere Lernleistung entfernen</button>
+  </div>`;
+}
+
+export function abiDateSheet(G) {
+  return `<div class="sheet-body">
+    <h3 class="sheet-title">Abi-Countdown</h3>
+    <p class="muted">Wann schreibst du deine erste Abiprüfung? Den Termin bekommst du von deiner Schule.</p>
+    <label class="field"><span>Datum</span><input class="input" type="date" data-in="abiDate" value="${esc(G.abiDate || '')}" min="${today()}"></label>
+    <button class="btn" data-act="closeSheet">Fertig</button>
+    ${G.abiDate ? '<button class="btn link" data-act="abiDateClear">Countdown entfernen</button>' : ''}
   </div>`;
 }
 
@@ -1076,6 +1109,11 @@ function me(S) {
       ${acc.status === 'auth_failed' ? `<button class="row link" data-act="relogin"><span class="r-ico warn">${icon('key')}</span><span class="label">Neu anmelden</span>${icon('right', 'chev')}</button>` : ''}
     </div>
 
+    <h4 class="section-title">Kalender</h4>
+    <div class="group">
+      <button class="row link" data-act="exportIcs"><span class="r-ico">${icon('plan')}</span><span class="label">In meinen Kalender übernehmen<small>Stunden der nächsten 2 Wochen, Klausuren und Hausaufgaben – als Kalenderdatei</small></span>${icon('right', 'chev')}</button>
+    </div>
+
     <h4 class="section-title">Noten</h4>
     <div class="group">
       <button class="row link" data-act="backup"><span class="r-ico">${icon('lock')}</span><span class="label">Noten sichern<small>${p.lastBackup ? 'Zuletzt am ' + esc(dateLong(p.lastBackup)) : 'Noch nie gesichert'} · als Datei, z. B. in iCloud</small></span>${icon('right', 'chev')}</button>
@@ -1140,7 +1178,9 @@ export function lessonSheet(b, hw = []) {
     <div>${status}${b.st === 'cancel' && b.d >= today() ? ` <span class="pill ghost">${esc(until(b.d, b.s))}</span>` : ''}</div>
     <dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
     ${(hw || []).filter((h) => h.subject === b.sl && h.due === b.d).map((h) => `<button class="hw-due ${h.done ? 'done' : ''}" data-act="hwEdit" data-v="${esc(h.id)}"><small>Hausaufgabe für diese Stunde</small>${esc(h.text)}</button>`).join('')}
-    <button class="btn" data-act="hwNew" data-subject="${esc(b.sl)}" data-su="${esc(b.su)}" data-from="${b.d}">${icon('plus')}Hausaufgabe eintragen</button>
+    ${b.st === 'exam' && b.d > today() ? `<button class="btn" data-act="examStudy" data-i="${esc(b.ks[0])}">${icon('bell')}Lern-Erinnerung 3 Tage vorher</button>` : ''}
+    <button class="btn ${b.st === 'exam' && b.d > today() ? 'soft' : ''}" data-act="hwNew" data-subject="${esc(b.sl)}" data-su="${esc(b.su)}" data-from="${b.d}">${icon('plus')}Hausaufgabe eintragen</button>
+    ${b.st === 'cancel' && b.d >= today() ? `<button class="btn soft" data-act="shareCancel" data-i="${esc(b.ks[0])}">${icon('share')}Ausfall teilen</button>` : ''}
     <button class="btn soft" data-act="closeSheet">Schließen</button>
   </div>`;
 }
