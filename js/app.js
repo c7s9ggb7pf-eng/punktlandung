@@ -381,6 +381,32 @@ function refreshGradeViews() {
   if (S.screen === 'main' && S.tab === 'noten') render();
 }
 
+// Ganz oben im Plan nach unten ziehen → bei Untis nachschauen.
+let pull = null;
+const pullEl = document.createElement('div');
+pullEl.className = 'pull';
+document.body.append(pullEl);
+document.addEventListener('touchstart', (e) => {
+  pull = S.screen === 'main' && S.tab === 'plan' && !S.demo && window.scrollY <= 0 && e.touches.length === 1 && !e.target.closest('.sheet')
+    ? { y: e.touches[0].clientY, d: 0 } : null;
+}, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (!pull) return;
+  pull.d = Math.max(0, e.touches[0].clientY - pull.y);
+  const p = Math.min(1, pull.d / 90);
+  pullEl.style.setProperty('--p', p.toFixed(2));
+  pullEl.classList.toggle('show', pull.d > 12);
+  pullEl.classList.toggle('ready', pull.d > 90);
+  pullEl.textContent = pull.d > 90 ? 'Loslassen zum Prüfen' : 'Ziehen zum Prüfen';
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (!pull) return;
+  const go = pull.d > 90;
+  pull = null;
+  pullEl.classList.remove('show', 'ready');
+  if (go) { haptic(10); refresh(false); }
+}, { passive: true });
+
 // Wischen im Kalender blättert vor und zurück.
 let touch = null;
 document.addEventListener('touchstart', (e) => {
@@ -1040,7 +1066,8 @@ function openFromUrl(url) {
       S.tab = 'plan';
     } else if (u.searchParams.has('ich')) S.tab = 'ich';
     else if (u.searchParams.has('noten')) S.tab = 'noten';
-    else if (u.searchParams.has('hw')) S.tab = 'aufgaben';
+    else if (u.searchParams.has('hw') || u.searchParams.has('aufgaben')) S.tab = 'aufgaben';
+    else if (u.searchParams.get('neu') === 'hw') { S.tab = 'aufgaben'; S._newHw = true; }
   } catch { /* egal */ }
 }
 
@@ -1091,6 +1118,7 @@ async function boot() {
     S.screen = 'main';
     render();
     await loadState();
+    if (S._newHw) { S._newHw = false; actions.hwNew({ dataset: {} }); }
     syncPush();
     askCoursesOnce();
   } else {
