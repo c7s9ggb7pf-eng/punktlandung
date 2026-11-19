@@ -2,6 +2,7 @@
 import {
   store, api, ApiError, enablePush, currentSubscription, pushSupported, permission, platform, isIOS, isStandalone,
   today, nowMin,
+  addDays, parseDay,
 } from './lib.js';
 import * as V from './views.js';
 import { toast, confetti, openSheet, updateSheet, closeSheet, haptic, runFlaps, resetFlaps, flapTo } from './ui.js';
@@ -561,7 +562,7 @@ const actions = {
   lesson(el) {
     const b = S.state?.snapshot?.blocks?.[Number(el.dataset.i)];
     if (!b) return;
-    openSheet(V.lessonSheet(b));
+    openSheet(V.lessonSheet(b, S.state?.homework));
     if (b.st === 'cancel' && b.d >= today()) setTimeout(() => confetti({ y: 0.55, count: 70 }), 250);
   },
   closeSheet() { closeSheet(); },
@@ -635,10 +636,88 @@ const actions = {
     closeSheet();
     logoutLocal('Abgemeldet – alles gelöscht.');
   },
+
+  // ---------- Hausaufgaben ----------
+  hwNew(el) {
+    const subject = el?.dataset.subject || '';
+    S.hw = { id: null, subject, su: el?.dataset.su || '', text: '', remind: 'eve',
+      due: subject ? V.nextLessonDay(S, subject, el?.dataset.from || null) : addDays(today(), 1) };
+    openSheet(V.hwSheet(S, S.hw));
+    setTimeout(() => document.querySelector('.hw-input')?.focus(), 350);
+  },
+  hwEdit(el) {
+    const h = (S.state?.homework || []).find((x) => x.id === el.dataset.v);
+    if (!h) return;
+    const r = h.remindAt ? new Date(h.remindAt) : null;
+    S.hw = { id: h.id, subject: h.subject, su: h.su, text: h.text, due: h.due, remind: !r ? 'none' : r.getHours() >= 12 ? 'eve' : 'morning' };
+    openSheet(V.hwSheet(S, S.hw));
+  },
+  hwSet(el) {
+    S.hw.text = document.querySelector('.hw-input')?.value ?? S.hw.text;
+    const k = el.dataset.k;
+    S.hw[k] = el.dataset.v;
+    if (k === 'subject') {
+      S.hw.su = el.dataset.su || '';
+      if (!S.hw.id) S.hw.due = V.nextLessonDay(S, S.hw.subject);
+    }
+    haptic(5);
+    updateSheet(V.hwSheet(S, S.hw));
+  },
+  async hwSave() {
+    const A = S.hw;
+    A.text = (document.querySelector('.hw-input')?.value || '').trim();
+    if (!A.subject) return toast('Bitte wähle ein Fach.');
+    if (!A.text) return toast('Was ist die Aufgabe?');
+    const at = (day, h, m) => { const d = parseDay(day); d.setHours(h, m, 0, 0); return d; };
+    let remind = null;
+    if (A.remind === 'eve') remind = at(addDays(A.due, -1), 17, 0);
+    if (A.remind === 'morning' || (remind && remind < new Date())) remind = at(A.due, 6, 45);
+    if (remind && remind < new Date()) remind = null;
+    const body = { id: A.id, subject: A.subject, su: A.su, text: A.text, due: A.due, remindAt: remind ? remind.toISOString() : null };
+    const msg = remind ? `Gespeichert – Erinnerung ${V.remindLabel(remind)}` : 'Gespeichert';
+    if (S.demo) {
+      const list = S.state.homework || (S.state.homework = []);
+      if (A.id) Object.assign(list.find((x) => x.id === A.id) || {}, body);
+      else list.push({ ...body, id: 'd' + Date.now(), done: false });
+      list.sort((a, b) => a.due.localeCompare(b.due));
+      closeSheet(); render(); return toast(msg);
+    }
+    try {
+      const r = await api(A.id ? 'hwUpdate' : 'hwAdd', body);
+      setState(r.state);
+      closeSheet();
+      render();
+      toast(msg);
+    } catch (e) { toast(e.message); }
+  },
+  async hwDone(el) {
+    const id = el.dataset.v;
+    const h = (S.state?.homework || []).find((x) => x.id === id);
+    if (!h) return;
+    h.done = true;
+    haptic(12);
+    el.closest('.hw-item')?.classList.add('gone');
+    setTimeout(render, 380);
+    toast('Erledigt – stark!');
+    if (S.demo) return;
+    try { setState((await api('hwUpdate', { id, done: true })).state); } catch (e) { h.done = false; render(); toast(e.message); }
+  },
+  async hwDelete() {
+    const id = S.hw?.id;
+    if (!id) return;
+    if (S.demo) { S.state.homework = S.state.homework.filter((x) => x.id !== id); closeSheet(); render(); return; }
+    try { setState((await api('hwDelete', { id })).state); closeSheet(); render(); toast('Gelöscht'); } catch (e) { toast(e.message); }
+  },
 };
 
 const inputs = {
   schoolq(el) { searchSchools(el.value); },
+  hwDate(el) {
+    if (!el.value) return;
+    S.hw.text = document.querySelector('.hw-input')?.value ?? S.hw.text;
+    S.hw.due = el.value;
+    updateSheet(V.hwSheet(S, S.hw));
+  },
   nick(el) {
     clearTimeout(inputs._t);
     inputs._t = setTimeout(() => savePrefs({ nick: el.value.trim() }), 300);

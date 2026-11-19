@@ -50,6 +50,7 @@ function demoBuild(blocks, mon, tomorrow, next) {
       className: 'Q2', authKind: 'password', status: 'ok', lastError: null, lastCheckAt: ago(1), lastSuccessAt: ago(1), settings: { restore: true },
     },
     snapshot: { fetchedAt: ago(1), from: mon, to: addDays(mon, 11), blocks },
+    homework: demoHomework(blocks),
     stats: {
       since: addDays(mon, -42), total: 23, upcoming: 3, days: 14, sleepIn: 4, fullDays: 1, earlyEnd: 3,
       top: [['Mathematik', 7], ['Englisch LK', 5], ['Religion', 4], ['Kunst', 4], ['Erdkunde', 3]], weekday: [0, 5, 3, 6, 4, 5, 0],
@@ -95,4 +96,16 @@ export function demoGrades(state) {
     });
   }
   return { abiYear: defaultAbiYear(), subjects, entries, exams: {}, _seeded: true };
+}
+
+// Beispiel-Hausaufgaben passend zum Plan (fällig zur nächsten Stunde des Fachs).
+function demoHomework(blocks) {
+  const t = today();
+  const next = (sl) => blocks.find((b) => b.sl === sl && b.d > t && b.st !== 'cancel')?.d || addDays(t, 2);
+  const at = (d, h) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() - 1); x.setHours(h, 0, 0, 0); return x.toISOString(); };
+  return [
+    { id: 'h1', subject: 'Mathematik', su: 'M', text: 'S. 112, Nr. 4 a–d und 7', due: next('Mathematik'), remindAt: at(next('Mathematik'), 17), done: false },
+    { id: 'h2', subject: 'Englisch LK', su: 'E', text: 'Read chapter 3 of the novel, write a short summary (150 words)', due: next('Englisch LK'), remindAt: at(next('Englisch LK'), 17), done: false },
+    { id: 'h3', subject: 'Deutsch', su: 'D', text: 'Gedichtanalyse fertigstellen', due: addDays(t, -1), remindAt: null, done: false },
+  ].sort((a, b) => a.due.localeCompare(b.due));
 }

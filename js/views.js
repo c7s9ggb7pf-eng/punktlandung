@@ -374,6 +374,7 @@ const shortName = (b, view) => {
 };
 const BADGE = { cancel: ['Fällt aus', 'aus'], change: ['Geändert', 'neu'], exam: ['Klausur', 'Klausur'] };
 
+let HW_OPEN = [];
 function lessonBlock(b, i, view, top, h, lane, n, t, nm) {
   const now = b.d === t && b.s <= nm && b.e > nm;
   const past = !now && isPast(b, t, nm);
@@ -391,6 +392,7 @@ function lessonBlock(b, i, view, top, h, lane, n, t, nm) {
     const extra = b.st === 'cancel' ? (b.rep ? `Stattdessen: ${b.rep}` : b.info || '') : [...(b.st === 'change' ? b.notes : []), b.info].filter(Boolean).join(' · ');
     if (extra && h >= 70) inner += `<span class="ls-x">${esc(extra)}</span>`;
   }
+  if (b.st !== 'cancel' && HW_OPEN.some((x) => x.d === b.d && x.subject === b.sl)) inner += '<span class="ls-hw" title="Hausaufgabe fällig">HA</span>';
   if (now) inner += `<span class="ls-now">Jetzt</span><span class="ls-prog" style="width:${Math.round(((nm - b.s) / (b.e - b.s)) * 100)}%"></span>`;
   const w = 100 / n;
   return `<button class="ls ${b.st} ${now ? 'cur' : ''} ${past ? 'past' : ''} ${h < 44 ? 'tight' : ''}" data-act="lesson" data-i="${i}"
@@ -399,6 +401,7 @@ function lessonBlock(b, i, view, top, h, lane, n, t, nm) {
 }
 
 function calendar(S, blocks, days) {
+  HW_OPEN = (S.state?.homework || []).filter((h) => !h.done).map((h) => ({ d: h.due, subject: h.subject }));
   const view = S.prefs.view || 3;
   const t = today();
   const nm = nowMin();
@@ -502,6 +505,78 @@ function examsCard(blocks) {
     }).join('')}</div></section>`;
 }
 
+/** Nächste Stunde eines Fachs (für das Fälligkeitsdatum), sonst morgen. */
+export function nextLessonDay(S, subject, after = null) {
+  const t = today();
+  const n = nowMin();
+  const b = (S.state?.snapshot?.blocks || []).find((x) => x.sl === subject && x.st !== 'cancel'
+    && (after ? x.d > after : x.d > t || (x.d === t && x.s > n)));
+  return b ? b.d : addDays(after || t, 1);
+}
+
+export function remindLabel(d) {
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const n = daysFromToday(day);
+  const w = n === 0 ? 'heute' : n === 1 ? 'morgen' : `${WD[d.getDay()]}`;
+  return `${w} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function dueLabel(d) {
+  const n = daysFromToday(d);
+  if (n < 0) return n === -1 ? 'seit gestern fällig' : `seit ${-n} Tagen fällig`;
+  if (n === 0) return 'heute';
+  if (n === 1) return 'morgen';
+  if (n === 2) return 'übermorgen';
+  return `${WD[weekday(d)]}, ${Number(d.slice(8))}.${Number(d.slice(5, 7))}.`;
+}
+
+function homeworkCard(S) {
+  const open = (S.state?.homework || []).filter((h) => !h.done);
+  const items = open.slice(0, 6).map((h) => {
+    const late = h.due < today();
+    return `<div class="hw-item ${late ? 'late' : ''}" style="--h:${hue(h.su, h.subject)}">
+      <button class="hw-check" data-act="hwDone" data-v="${esc(h.id)}" aria-label="Erledigt"></button>
+      <button class="hw-body" data-act="hwEdit" data-v="${esc(h.id)}">
+        <span class="hw-top"><b>${esc(h.subject.replace(/\s+(LK|GK)$/i, ''))}</b><em>${esc(dueLabel(h.due))}</em></span>
+        <span class="hw-text">${esc(h.text)}</span>
+      </button>
+    </div>`;
+  }).join('');
+  return `<section class="hw" aria-label="Hausaufgaben">
+    <div class="hw-head"><small>Hausaufgaben${open.length ? ` · ${open.length}` : ''}</small>
+      <button class="hw-add" data-act="hwNew" aria-label="Hausaufgabe eintragen">${icon('plus')}</button></div>
+    ${items || '<button class="hw-empty" data-act="hwNew">Keine offenen Hausaufgaben – tippe hier oder auf eine Stunde, um eine einzutragen.</button>'}
+    ${open.length > 6 ? `<p class="hw-more">+ ${open.length - 6} weitere</p>` : ''}
+  </section>`;
+}
+
+/** Blatt zum Eintragen/Bearbeiten. A = Entwurf { id, subject, su, text, due, remind } */
+export function hwSheet(S, A) {
+  const subjects = [...new Map((S.state?.snapshot?.blocks || []).map((b) => [b.sl, b.su])).entries()].sort((a, b) => a[0].localeCompare(b[0], 'de'));
+  if (A.subject && !subjects.some(([n]) => n === A.subject)) subjects.unshift([A.subject, A.su]);
+  const nextL = A.subject ? nextLessonDay(S, A.subject) : null;
+  const t = today();
+  const dueOpts = [
+    nextL ? [nextL, `Nächste Stunde · ${dueLabel(nextL)}`] : null,
+    [addDays(t, 1), 'Morgen'],
+    [addDays(t, 2), 'Übermorgen'],
+    [addDays(t, 7), 'In einer Woche'],
+  ].filter(Boolean).filter((o, i, arr) => arr.findIndex((x) => x[0] === o[0]) === i);
+  return `<div class="sheet-body hw-sheet">
+    <h3 class="sheet-title">${A.id ? 'Hausaufgabe' : 'Hausaufgabe eintragen'}</h3>
+    <div class="chips subj-chips">${subjects.map(([n, su]) => `<button class="chip ${n === A.subject ? 'on' : ''}" style="--h:${hue(su, n)}" data-act="hwSet" data-k="subject" data-v="${esc(n)}" data-su="${esc(su || '')}"><i></i>${esc(n)}</button>`).join('')}</div>
+    <label class="field"><span>Aufgabe</span>
+      <textarea class="input hw-input" name="hwtext" rows="3" maxlength="500" placeholder="z. B. S. 42, Nr. 3–5">${esc(A.text || '')}</textarea></label>
+    <div class="field-row"><span>Fällig</span></div>
+    <div class="chips">${dueOpts.map(([d, l]) => `<button class="chip ${A.due === d ? 'on' : ''}" data-act="hwSet" data-k="due" data-v="${d}">${esc(l)}</button>`).join('')}
+      <label class="chip date-chip ${dueOpts.some((o) => o[0] === A.due) ? '' : 'on'}">${dueOpts.some((o) => o[0] === A.due) ? 'Datum …' : esc(dueLabel(A.due))}<input type="date" data-in="hwDate" value="${esc(A.due)}" min="${t}"></label></div>
+    <div class="field-row"><span>Erinnerung</span></div>
+    <div class="seg small">${[['eve', 'Vorabend 17 Uhr'], ['morning', 'Morgens 6:45'], ['none', 'Keine']].map(([k, l]) => `<button class="${A.remind === k ? 'on' : ''}" data-act="hwSet" data-k="remind" data-v="${k}">${l}</button>`).join('')}</div>
+    <button class="btn" data-act="hwSave">${A.id ? 'Speichern' : 'Eintragen'}</button>
+    ${A.id ? '<button class="btn link" data-act="hwDelete">Löschen</button>' : '<button class="btn link" data-act="closeSheet">Abbrechen</button>'}
+  </div>`;
+}
+
 function plan(S) {
   const blocks = S.state?.snapshot?.blocks || [];
   const name = firstName(S);
@@ -519,6 +594,7 @@ function plan(S) {
   return `${head}
     ${hero(S, blocks)}
     ${examsCard(blocks)}
+    ${homeworkCard(S)}
     <div class="seg view-seg" role="tablist">${[[1, '1 Tag'], [3, '3 Tage'], [5, 'Woche']].map(([k, l]) => `<button role="tab" class="${view === k ? 'on' : ''}" data-act="view" data-v="${k}" aria-selected="${view === k}">${l}</button>`).join('')}</div>
     <div class="cal-nav">
       <button class="icon-btn ghost" data-act="step" data-v="-1" aria-label="Zurück" ${canPrev ? '' : 'disabled'}>${icon('left')}</button>
@@ -838,7 +914,7 @@ export function main(S) {
     </nav>`;
 }
 
-export function lessonSheet(b) {
+export function lessonSheet(b, hw = []) {
   const rows = [
     ['Zeit', `${b.p ? esc(fmtPeriod(b.p)) + '<br>' : ''}${hhmm(b.s)}–${hhmm(b.e)} Uhr`],
     b.ro.length ? ['Raum', esc(b.ro.join(', '))] : null,
@@ -857,6 +933,8 @@ export function lessonSheet(b) {
     <h3 class="sheet-title"><i class="subj-dot"></i>${esc(b.sl)}</h3>
     <div>${status}${b.st === 'cancel' && b.d >= today() ? ` <span class="pill ghost">${esc(until(b.d, b.s))}</span>` : ''}</div>
     <dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+    ${(hw || []).filter((h) => h.subject === b.sl && h.due === b.d).map((h) => `<button class="hw-due ${h.done ? 'done' : ''}" data-act="hwEdit" data-v="${esc(h.id)}"><small>Hausaufgabe für diese Stunde</small>${esc(h.text)}</button>`).join('')}
+    <button class="btn" data-act="hwNew" data-subject="${esc(b.sl)}" data-su="${esc(b.su)}" data-from="${b.d}">${icon('plus')}Hausaufgabe eintragen</button>
     <button class="btn soft" data-act="closeSheet">Schließen</button>
   </div>`;
 }
