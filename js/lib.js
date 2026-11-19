@@ -1,7 +1,7 @@
 // Punktlandung – Grundlagen: Speicher, Server-Anbindung, Mitteilungen, Zeit.
 
 export const API = 'https://ahgjcjkbkvkyedztyory.supabase.co/functions/v1/punktlandung';
-export const VERSION = '1.5.2';
+export const VERSION = '1.6.0';
 
 // ---------- Speicher (lokal auf dem Gerät) ----------
 const read = (k, fb) => {
@@ -26,6 +26,16 @@ function idb() {
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
+}
+export async function idbGet(key) {
+  try {
+    const db = await idb();
+    return await new Promise((resolve) => {
+      const r = db.transaction('kv').objectStore('kv').get(key);
+      r.onsuccess = () => resolve(r.result ?? null);
+      r.onerror = () => resolve(null);
+    });
+  } catch { return null; }
 }
 async function idbPut(key, value) {
   try {
@@ -63,7 +73,9 @@ export const store = {
   get draft() { return read('pl.draft', {}); },
   set draft(v) { write('pl.draft', v); },
   get grades() { return read('pl.grades', null); },
-  set grades(v) { write('pl.grades', v); },
+  set grades(v) { write('pl.grades', v); idbPut('grades', v); }, // zweite Kopie in IndexedDB
+  get examLog() { return read('pl.examLog', {}); },
+  set examLog(v) { write('pl.examLog', v); },
   get lastSeenEvent() { return read('pl.lastSeenEvent', 0); },
   set lastSeenEvent(v) { write('pl.lastSeenEvent', v); },
   clear() {

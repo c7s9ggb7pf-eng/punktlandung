@@ -130,12 +130,13 @@ export function abi(G) {
   const abiSubs = G.subjects.filter((s) => s.abi > 0).sort((a, b) => a.abi - b.abi).slice(0, 4);
   const overall = avg(courses.map((c) => c.pts));
   let exEst = false;
-  const exams = [0, 1, 2, 3].map((i) => {
+  const examList = [0, 1, 2, 3].map((i) => {
     const sub = abiSubs[i];
-    if (sub && G.exams?.[sub.id] != null) return G.exams[sub.id];
+    if (sub && G.exams?.[sub.id] != null) return { sid: sub.id, lk: sub.lk, pts: G.exams[sub.id], est: false };
     exEst = true;
-    return Math.round(sub ? (subjectAvg(G, sub.id) ?? overall) : overall);
+    return { sid: sub?.id ?? null, lk: !!sub?.lk, pts: Math.round(sub ? (subjectAvg(G, sub.id) ?? overall) : overall), est: true };
   });
+  const exams = examList.map((e) => e.pts);
   if (G.bll?.on) {
     if (G.bll.pts == null) exEst = true;
     exams.push(G.bll.pts ?? Math.round(overall));
@@ -147,7 +148,45 @@ export function abi(G) {
   return {
     block1, block2, total, passed, deficits, note: passed ? note : null,
     est: hjs < 4 || exEst || chosen.some((c) => c.est), hjs, abiCount: abiSubs.length, examsMissing: exEst,
+    chosen, examList,
   };
+}
+
+/**
+ * Zulassung und Bestehen nach APO-GOSt NRW (vereinfacht, ohne Gewähr):
+ * Block I: mind. 200 Punkte, höchstens 8 Kurse unter 5 Punkten, davon höchstens 3 im LK, kein Kurs mit 0 Punkten.
+ * Block II: mind. 100 Punkte, mind. 2 Abiturfächer mit mind. 5 Punkten in der Prüfung, darunter ein LK.
+ * Gesamt: mind. 300 Punkte. Jede Prüfung meldet, wie viel Luft noch ist.
+ */
+export function admission(G, r = abi(G)) {
+  if (!r) return null;
+  const def = r.chosen.filter((c) => c.pts < 5);
+  const defLk = def.filter((c) => c.lk).length;
+  const zero = r.chosen.filter((c) => c.pts === 0).length;
+  const ex5 = r.examList.filter((e) => e.sid && e.pts >= 5);
+  const lk5 = ex5.some((e) => e.lk);
+  const name = (sid) => G.subjects.find((x) => x.id === sid)?.name || '';
+  const checks = [
+    { k: 'def', ok: def.length <= 8, label: 'Unterkurse (unter 5 P.)', val: `${def.length} von max. 8`, warn: def.length >= 6 && def.length <= 8,
+      hint: def.length > 8 ? 'Zu viele – so wärst du nicht zugelassen.' : def.length ? `Noch ${8 - def.length} erlaubt: ${[...new Set(def.map((c) => name(c.sid)))].join(', ')}` : 'Keine – stark.' },
+    { k: 'deflk', ok: defLk <= 3, label: 'Davon in Leistungskursen', val: `${defLk} von max. 3`, warn: defLk === 3 },
+    { k: 'zero', ok: zero === 0, label: 'Kein Kurs mit 0 Punkten', val: zero ? `${zero}×` : 'ok' },
+    { k: 'b1', ok: r.block1 >= 200, label: 'Block I mind. 200', val: `${r.block1}`, warn: r.block1 < 240 && r.block1 >= 200 },
+    { k: 'b2', ok: r.block2 >= 100, label: 'Block II mind. 100', val: `${r.block2}` },
+    { k: 'ex', ok: ex5.length >= 2 && lk5, label: '2 Prüfungen mit mind. 5 P., davon 1 LK', val: `${ex5.length}${lk5 ? ' · LK ok' : ' · kein LK'}`, est: r.examsMissing },
+    { k: 'tot', ok: r.total >= 300, label: 'Gesamt mind. 300', val: `${r.total}` },
+  ];
+  return { ok: checks.every((c) => c.ok), checks, est: r.est };
+}
+
+/** Kleinste Prüfungspunktzahl in einem Abifach, mit der die Zielnote erreicht wird (Rest wie geschätzt). */
+export function examNeed(G, sid, target) {
+  const need = pointsFor(target);
+  for (let x = 0; x <= 15; x++) {
+    const r = abi({ ...G, exams: { ...G.exams, [sid]: x } });
+    if (r && r.total >= need && admission(G, r)?.ok) return x;
+  }
+  return null;
 }
 
 /** Mindestpunktzahl (Block I + II) für eine Abiturnote nach NRW-Tabelle, z. B. 1,5 → 733. */

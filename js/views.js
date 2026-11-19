@@ -1,10 +1,11 @@
 // Punktlandung – Ansichten (reines HTML aus dem Zustand).
 import { esc, icon, hue, flap } from './ui.js';
+import { store } from './lib.js';
 import {
   today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod, parseDay,
   WD, WD_LONG, isIOS, isStandalone, pushSupported, permission, VERSION,
 } from './lib.js';
-import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi, goal, hjsOf, baseName } from './grades.js';
+import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi, goal, hjsOf, baseName, admission, examNeed } from './grades.js';
 
 const wordmark = (cls = '') => `<span class="wordmark ${cls}" aria-label="Punktlandung">punktlandung<span class="wm-dot"></span></span>`;
 
@@ -748,7 +749,56 @@ function goalCard(G, blocks) {
     <p class="goal-big">${big}</p>
     ${!g.done && g.x != null && !g.safe ? `<div class="goal-bar"><i style="left:${pos}%"></i></div><div class="goal-scale"><span>0</span><span>5</span><span>10</span><span>15 P.</span></div>` : ''}
     <p class="goal-small">${small}</p>
+    ${examNeeds(G, target)}
   </section>`;
+}
+
+/** Je Abifach ohne eingetragene Prüfung: nötige Punkte für die Wunschnote (Rest wie hochgerechnet). */
+function examNeeds(G, target) {
+  const subs = G.subjects.filter((s) => s.abi > 0 && G.exams?.[s.id] == null).sort((a, b) => a.abi - b.abi);
+  if (!subs.length) return '';
+  const xs = subs.map((s) => [s, examNeed(G, s.id, target)]);
+  if (xs.every(([, x]) => x == null)) {
+    return `<div class="needs"><small class="needs-h">Prüfungen</small><p class="goal-small">Für ${fmt1(target)} reicht eine einzelne starke Prüfung nicht – es kommt auf alle offenen Prüfungen und Kurse zusammen an (Wert oben).</p></div>`;
+  }
+  const items = xs.map(([s, x]) => `<span class="need ${x == null ? 'no' : tone(Math.max(x, 5))}"><small>${esc(s.name)}</small><b>${x == null ? '–' : x === 0 ? '✓' : x}</b></span>`).join('');
+  return `<div class="needs"><small class="needs-h">Nötig in der Prüfung für ${fmt1(target)} (wenn der Rest so bleibt)</small><div class="needs-row">${items}</div></div>`;
+}
+
+/** Ampel: Zulassung & Bestehen nach NRW-Regeln. */
+function admissionCard(G, r) {
+  const a = admission(G, r);
+  if (!a) return '';
+  const bad = a.checks.filter((c) => !c.ok);
+  const warn = a.checks.filter((c) => c.ok && c.warn);
+  const head = bad.length ? `<b class="bad">${bad.length === 1 ? 'Eine Bedingung' : bad.length + ' Bedingungen'} noch nicht erfüllt</b>`
+    : warn.length ? '<b class="warn">Zugelassen – aber knapp</b>' : '<b class="good">Alle Bedingungen erfüllt</b>';
+  return `<details class="card adm ${bad.length ? 'is-bad' : warn.length ? 'is-warn' : 'is-good'}" ${bad.length ? 'open' : ''}>
+    <summary><span class="adm-dot"></span><span><small>Zulassung & Bestehen${a.est ? ' · Hochrechnung' : ''}</small>${head}</span>${icon('right', 'chev')}</summary>
+    <ul>${a.checks.map((c) => `<li class="${!c.ok ? 'bad' : c.warn ? 'warn' : 'ok'}"><span>${esc(c.label)}${c.hint ? `<small>${esc(c.hint)}</small>` : ''}</span><b>${esc(c.val)}</b></li>`).join('')}</ul>
+    <p class="fine">Vereinfacht nach APO-GOSt NRW – maßgeblich ist, was deine Schule berechnet.</p>
+  </details>`;
+}
+
+/** Vorbei geschriebene Klausuren ohne eingetragene Note. */
+function examPrompts(S, G) {
+  const t = today();
+  const log = { ...store.examLog };
+  for (const b of S.state?.snapshot?.blocks || []) if (b.st === 'exam') log[`${b.d}|${b.sl}`] = { d: b.d, sl: b.sl };
+  const out = [];
+  for (const [k, e] of Object.entries(log)) {
+    if (e.d >= t || e.d < addDays(t, -28) || G.examSkip?.[k]) continue;
+    const sub = G.subjects.find((s) => baseName(s.name) === baseName(e.sl));
+    if (!sub) continue;
+    if (G.entries.some((x) => x.sid === sub.id && x.kind === 'k' && x.at >= e.d)) continue;
+    out.push({ k, e, sub });
+  }
+  return out.sort((a, b) => b.e.d.localeCompare(a.e.d)).slice(0, 2).map(({ k, e, sub }) => `
+    <div class="exam-ask" style="--h:${hue(sub.su, sub.name)}"><i class="subj-dot"></i>
+      <span><small>Klausur vom ${esc(dateLong(e.d))}</small><b>${esc(sub.name)} – schon zurück?</b></span>
+      <button class="mini acc" data-act="examGrade" data-sid="${sub.id}">Note eintragen</button>
+      <button class="x" data-act="examSkip" data-v="${esc(k)}" aria-label="Ausblenden">${icon('x')}</button>
+    </div>`).join('');
 }
 
 function noten(S) {
@@ -766,13 +816,16 @@ function noten(S) {
   if (!G.subjects.some((s) => s.lk) || G.subjects.filter((s) => s.abi > 0).length < 4) {
     hint = `<button class="tip" data-act="subject" data-v="${G.subjects[0].id}">${icon('spark')}<span><b>Kurz einrichten</b>Tippe auf ein Fach und markiere deine 2 Leistungskurse und 4 Abifächer – dann stimmt die Hochrechnung.</span></button>`;
   }
+  const adm = r ? admission(G, r) : null;
+  const backupTip = G.entries.length >= 5 && (!S.prefs.lastBackup || S.prefs.lastBackup < addDays(today(), -30)) && !S.demo
+    ? `<button class="tip" data-act="backup">${icon('lock')}<span><b>Noten sichern</b>Deine Noten liegen nur auf diesem Handy. ${S.prefs.lastBackup ? 'Letzte Sicherung ist über einen Monat her' : 'Sicher sie einmal als Datei'} – dann sind sie auch bei einem neuen Handy nicht weg.</span></button>` : '';
   const summary = r ? `
     <section class="card abi">
       ${ring(r)}
       <div class="abi-txt">
         <small>Abi-Schnitt · Hochrechnung</small>
         <b>${r.total}<span> / 900 P.</span></b>
-        <p>${!r.passed ? 'So noch nicht bestanden – mind. 300 Punkte nötig.' : r.est ? `Noch offen: ${r.hjs < 4 ? HJ.slice(r.hjs).join(', ') + (r.examsMissing ? ' und die Prüfungen' : '') : 'die Prüfungen'}` : 'Alles eingetragen.'}</p>
+        <p>${!r.passed || !adm?.ok ? 'So noch nicht bestanden – siehe „Zulassung & Bestehen“.' : r.est ? `Noch offen: ${r.hjs < 4 ? HJ.slice(r.hjs).join(', ') + (r.examsMissing ? ' und die Prüfungen' : '') : 'die Prüfungen'}` : 'Alles eingetragen.'}</p>
       </div>
       <div class="abi-blocks"><span>Block I<b>${r.block1}<i>/600</i></b></span><span>Block II<b>${r.block2}<i>/300</i></b></span>${r.deficits ? `<span class="warn">Unterkurse<b>${r.deficits}</b></span>` : ''}</div>
     </section>` : `
@@ -789,7 +842,7 @@ function noten(S) {
       <span class="sn"><i style="--h:${hue(s.su, s.name)}"></i><span><b>${esc(s.name)}</b>${tag ? `<small>${tag}</small>` : ''}</span></span>
       ${cells}<span class="avg">${a == null ? '–' : fmt1(a)}</span></button>`;
   }).join('');
-  return `${head}${hint}${summary}${r ? goalCard(G, S.state?.snapshot?.blocks) : ''}
+  return `${head}${examPrompts(S, G)}${hint}${backupTip}${summary}${r ? admissionCard(G, r) : ''}${r ? goalCard(G, S.state?.snapshot?.blocks) : ''}
     <section class="card subjects">
       <div class="subj head"><span class="sn">Fach</span>${HJ.map((h, i) => `<span class="${i === cur ? 'cur' : ''}">${h}</span>`).join('')}<span class="avg">Ø</span></div>
       ${rows}
@@ -822,6 +875,7 @@ export function subjectSheet(G, sid) {
     <div class="seg small"><button class="${!s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="0">Grundkurs</button><button class="${s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="1">Leistungskurs</button></div>
     <div class="seg small"><button class="${!s.q1 ? 'on' : ''}" data-act="setQ1" data-sid="${sid}" data-v="0">Q1 + Q2</button><button class="${s.q1 ? 'on' : ''}" data-act="setQ1" data-sid="${sid}" data-v="1">Nur in der Q1</button></div>
     <div class="field-row"><span>Abiturfach</span><div class="chips">${[0, 1, 2, 3, 4].map((n) => `<button class="chip ${s.abi === n ? 'on' : ''}" data-act="setAbi" data-sid="${sid}" data-v="${n}">${n ? n + '.' : 'nein'}</button>`).join('')}</div></div>
+    ${s.abi && ex == null && abi(G) ? (() => { const tg = G.goal ?? 1.5; const x = examNeed(G, sid, tg); return `<p class="muted small-note">${x == null ? `Für ${fmt1(tg)} reicht es mit dieser Prüfung allein nicht – schau in den Ziel-Rechner.` : `Für eine ${fmt1(tg)} brauchst du in dieser Prüfung mindestens <b>${x} Punkte (${noteOf(x)})</b> – wenn der Rest so bleibt.`}</p>`; })() : ''}
     ${s.abi ? `<div class="field-row"><span>Abiturprüfung</span>${ex != null ? `<b class="pt ${tone(ex)}">${ex}</b><button class="mini" data-act="delExam" data-sid="${sid}">Löschen</button>` : `<button class="mini acc" data-act="addGrade" data-sid="${sid}" data-hj="abi">Punkte eintragen</button>`}</div>` : ''}
     <div class="hjs">${hjs}</div>
     <button class="btn soft" data-act="closeSheet">Fertig</button>
@@ -1005,6 +1059,8 @@ function me(S) {
       ${pushRow(S)}
       <label class="row"><span class="label">„Doch Unterricht“ melden<small>Wenn ein Ausfall zurückgenommen wird</small></span>
         <input type="checkbox" class="switch" data-act="toggleSetting" data-k="restore" ${set.restore !== false ? 'checked' : ''}></label>
+      <label class="row"><span class="label">Abendvorschau<small>Gegen 18 Uhr, wenn sich am nächsten Schultag etwas ändert</small></span>
+        <input type="checkbox" class="switch" data-act="toggleSetting" data-k="preview" ${set.preview !== false ? 'checked' : ''}></label>
       <label class="row"><span class="label">Klausur-Erinnerung<small>Am Vorabend um 17 Uhr, mit Raum und Uhrzeit</small></span>
         <input type="checkbox" class="switch" data-act="toggleSetting" data-k="exams" ${set.exams !== false ? 'checked' : ''}></label>
       <label class="row"><span class="label">Raum- & Lehrerwechsel melden<small>Wenn sich Raum oder Lehrkraft ändert</small></span>
@@ -1018,6 +1074,12 @@ function me(S) {
       <button class="row link" data-act="openCourses"><span class="r-ico">${icon('grade')}</span><span class="label">Meine Kurse<small>${coursesChosen(S) ? `${acc.settings.courses.length} ausgewählt` : 'Noch nicht ausgewählt'}</small></span>${icon('right', 'chev')}</button>
       <button class="row link" data-act="refresh" ${S.busy.refresh ? 'disabled' : ''}><span class="r-ico">${icon('refresh')}</span><span class="label">Jetzt prüfen<small>${statusTxt}</small></span>${S.busy.refresh ? '<span class="spin"></span>' : icon('right', 'chev')}</button>
       ${acc.status === 'auth_failed' ? `<button class="row link" data-act="relogin"><span class="r-ico warn">${icon('key')}</span><span class="label">Neu anmelden</span>${icon('right', 'chev')}</button>` : ''}
+    </div>
+
+    <h4 class="section-title">Noten</h4>
+    <div class="group">
+      <button class="row link" data-act="backup"><span class="r-ico">${icon('lock')}</span><span class="label">Noten sichern<small>${p.lastBackup ? 'Zuletzt am ' + esc(dateLong(p.lastBackup)) : 'Noch nie gesichert'} · als Datei, z. B. in iCloud</small></span>${icon('right', 'chev')}</button>
+      <button class="row link" data-act="restore"><span class="r-ico">${icon('refresh')}</span><span class="label">Noten wiederherstellen<small>Aus einer gesicherten Datei</small></span>${icon('right', 'chev')}</button>
     </div>
 
     <h4 class="section-title">Aussehen</h4>

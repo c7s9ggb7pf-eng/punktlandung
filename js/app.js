@@ -1,6 +1,6 @@
 // Punktlandung – Start, Zustand und Aktionen.
 import {
-  store, api, ApiError, enablePush, currentSubscription, pushSupported, permission, platform, isIOS, isStandalone,
+  store, api, ApiError, idbGet, enablePush, currentSubscription, pushSupported, permission, platform, isIOS, isStandalone,
   today, nowMin,
   addDays, parseDay,
 } from './lib.js';
@@ -156,7 +156,22 @@ function savePrefs(patch) {
 function setState(st) {
   S.state = st;
   store.state = st;
+  logExams(st);
   updateBadge();
+}
+
+/** Klausuren aus dem Plan merken (der Plan reicht nur bis Montag zurück), damit später nach der Note gefragt werden kann. */
+function logExams(st) {
+  const log = store.examLog;
+  let changed = false;
+  for (const b of st?.snapshot?.blocks || []) {
+    if (b.st !== 'exam') continue;
+    const k = `${b.d}|${b.sl}`;
+    if (!log[k]) { log[k] = { d: b.d, sl: b.sl }; changed = true; }
+  }
+  const old = addDays(today(), -60);
+  for (const [k, v] of Object.entries(log)) if (v.d < old) { delete log[k]; changed = true; }
+  if (changed) store.examLog = log;
 }
 
 function updateBadge() {
@@ -566,6 +581,65 @@ const actions = {
     } else closeSheet();
     render();
   },
+  // ---------- Noten sichern ----------
+  async backup() {
+    const data = { app: 'punktlandung', v: 1, at: new Date().toISOString(), grades: S.grades };
+    const name = `punktlandung-noten-${today()}.json`;
+    const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Punktlandung – Noten' });
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file);
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
+      savePrefs({ lastBackup: today() });
+      toast('Gesichert – heb die Datei gut auf (z. B. in „Dateien“ oder iCloud).', 3800);
+      render();
+    } catch (e) {
+      if (e?.name !== 'AbortError') toast('Sichern ging nicht: ' + (e?.message || e));
+    }
+  },
+  restore() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      try {
+        const d = JSON.parse(await f.text());
+        const g = d?.grades;
+        if (d?.app !== 'punktlandung' || !Array.isArray(g?.subjects) || !Array.isArray(g?.entries)) throw new Error('Das ist keine Punktlandung-Sicherung.');
+        localStorage.setItem('pl.grades.prev', JSON.stringify(S.grades));
+        S.grades = { ...G.empty(), ...g, exams: g.exams || {} };
+        saveGrades();
+        toast(`Wiederhergestellt: ${g.subjects.length} Fächer, ${g.entries.length} Noten (Stand ${String(d.at || '').slice(0, 10)}).`, 4000);
+        S.tab = 'noten';
+        render();
+      } catch (e) {
+        toast(e.message || 'Datei konnte nicht gelesen werden.', 4000);
+      }
+    };
+    input.click();
+  },
+  examGrade(el) {
+    const sub = S.grades.subjects.find((s) => s.id === el.dataset.sid);
+    if (!sub) return;
+    S.add = { sid: sub.id, hj: Math.max(0, G.currentHj(S.grades.abiYear)), kind: 'k' };
+    fitHj();
+    S._fromSubject = null;
+    openSheet(V.addSheet(S.grades, S.add));
+  },
+  examSkip(el) {
+    S.grades.examSkip = { ...(S.grades.examSkip || {}), [el.dataset.v]: 1 };
+    saveGrades();
+    render();
+  },
+
   // ---------- Besondere Lernleistung ----------
   bllOpen() {
     if (!S.grades.bll?.on) {
@@ -900,6 +974,13 @@ async function boot() {
   if (location.search) {
     openFromUrl(location.href);
     if (!demo) history.replaceState(null, '', location.pathname);
+  }
+  if (!demo && !store.grades) {
+    const g = await idbGet('grades');
+    if (g?.subjects?.length) {
+      S.grades = g;
+      store.grades = g;
+    }
   }
   if (demo) {
     S.demo = true;
