@@ -554,7 +554,7 @@ function homeworkCard(S) {
 export function hwSheet(S, A) {
   const subjects = [...new Map((S.state?.snapshot?.blocks || []).map((b) => [b.sl, b.su])).entries()].sort((a, b) => a[0].localeCompare(b[0], 'de'));
   if (A.subject && !subjects.some(([n]) => n === A.subject)) subjects.unshift([A.subject, A.su]);
-  const nextL = A.subject ? nextLessonDay(S, A.subject) : null;
+  const nextL = A.subject ? nextLessonDay(S, A.subject, A.from || null) : null;
   const t = today();
   const dueOpts = [
     nextL ? [nextL, `Nächste Stunde · ${dueLabel(nextL)}`] : null,

@@ -640,7 +640,7 @@ const actions = {
   // ---------- Hausaufgaben ----------
   hwNew(el) {
     const subject = el?.dataset.subject || '';
-    S.hw = { id: null, subject, su: el?.dataset.su || '', text: '', remind: 'eve',
+    S.hw = { id: null, subject, su: el?.dataset.su || '', text: '', remind: 'eve', from: el?.dataset.from || null,
       due: subject ? V.nextLessonDay(S, subject, el?.dataset.from || null) : addDays(today(), 1) };
     openSheet(V.hwSheet(S, S.hw));
     setTimeout(() => document.querySelector('.hw-input')?.focus(), 350);
@@ -658,7 +658,7 @@ const actions = {
     S.hw[k] = el.dataset.v;
     if (k === 'subject') {
       S.hw.su = el.dataset.su || '';
-      if (!S.hw.id) S.hw.due = V.nextLessonDay(S, S.hw.subject);
+      if (!S.hw.id) S.hw.due = V.nextLessonDay(S, S.hw.subject, S.hw.from);
     }
     haptic(5);
     updateSheet(V.hwSheet(S, S.hw));
