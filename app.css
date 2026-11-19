@@ -967,3 +967,4 @@ body::after {
   height: env(safe-area-inset-top); background: var(--bg); opacity: 0; transition: opacity .2s;
 }
 html.scrolled body::after { opacity: 1; }
+.pt.none.off { opacity: .35; }

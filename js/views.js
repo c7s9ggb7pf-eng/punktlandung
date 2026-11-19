@@ -4,7 +4,7 @@ import {
   today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod, parseDay,
   WD, WD_LONG, isIOS, isStandalone, pushSupported, permission, VERSION,
 } from './lib.js';
-import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi, goal } from './grades.js';
+import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi, goal, hjsOf, baseName } from './grades.js';
 
 const wordmark = (cls = '') => `<span class="wordmark ${cls}" aria-label="Punktlandung">punktlandung<span class="wm-dot"></span></span>`;
 
@@ -725,7 +725,7 @@ const GOALS = [1.0, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0];
 /** Ziel-Rechner-Karte im Noten-Tab. */
 function goalCard(G, blocks) {
   const target = G.goal ?? 1.5;
-  const g = goal(G, target, currentHj(G.abiYear), new Set((blocks || []).map((b) => b.sl)));
+  const g = goal(G, target, currentHj(G.abiYear), new Set((blocks || []).map((b) => baseName(b.sl))));
   let big;
   let small;
   if (g.done) {
@@ -779,8 +779,9 @@ function noten(S) {
     <section class="card abi empty-abi">${ring(null)}<div class="abi-txt"><small>Abi-Schnitt</small><b>Noch leer</b><p>Trag deine ersten Punkte ein – der Schnitt rechnet sich dann von selbst.</p></div></section>`;
   const rows = G.subjects.map((s) => {
     const a = subjectAvg(G, s.id);
-    const tag = [s.lk ? 'LK' : '', s.abi ? `Abi ${s.abi}` : ''].filter(Boolean).join(' · ');
+    const tag = [s.lk ? 'LK' : '', s.abi ? `Abi ${s.abi}` : '', s.q1 ? 'nur Q1' : ''].filter(Boolean).join(' · ');
     const cells = HJ.map((_, hj) => {
+      if (!hjsOf(s).includes(hj)) return '<span class="pt none off">–</span>';
       const res = hjResult(G, s.id, hj);
       return res ? `<span class="pt ${tone(res.pts)} ${res.est ? 'est' : ''} ${hj === cur ? 'cur' : ''}">${res.pts}</span>` : `<span class="pt none ${hj === cur ? 'cur' : ''}">·</span>`;
     }).join('');
@@ -794,6 +795,7 @@ function noten(S) {
       ${rows}
     </section>
     <button class="btn" data-act="addGrade">${icon('plus')}Note eintragen</button>
+    <button class="btn link" data-act="addSubject">Fach hinzufügen (z. B. nur Q1)</button>
     <p class="fine center">Deine Noten bleiben nur auf diesem Handy. Hochrechnung nach APO-GOSt NRW, vereinfacht – ohne Gewähr.</p>`;
 }
 
@@ -801,7 +803,8 @@ export function subjectSheet(G, sid) {
   const s = G.subjects.find((x) => x.id === sid);
   if (!s) return '';
   const cur = currentHj(G.abiYear);
-  const hjs = HJ.map((h, hj) => {
+  const hjs = hjsOf(s).map((hj) => {
+    const h = HJ[hj];
     const es = G.entries.filter((e) => e.sid === sid && e.hj === hj);
     const res = hjResult(G, sid, hj);
     return `<div class="hj ${hj === cur ? 'cur' : ''}">
@@ -815,6 +818,7 @@ export function subjectSheet(G, sid) {
   return `<div class="sheet-body" style="--h:${hue(s.su, s.name)}">
     <h3 class="sheet-title"><i class="subj-dot"></i>${esc(s.name)}</h3>
     <div class="seg small"><button class="${!s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="0">Grundkurs</button><button class="${s.lk ? 'on' : ''}" data-act="setLk" data-sid="${sid}" data-v="1">Leistungskurs</button></div>
+    <div class="seg small"><button class="${!s.q1 ? 'on' : ''}" data-act="setQ1" data-sid="${sid}" data-v="0">Q1 + Q2</button><button class="${s.q1 ? 'on' : ''}" data-act="setQ1" data-sid="${sid}" data-v="1">Nur in der Q1</button></div>
     <div class="field-row"><span>Abiturfach</span><div class="chips">${[0, 1, 2, 3, 4].map((n) => `<button class="chip ${s.abi === n ? 'on' : ''}" data-act="setAbi" data-sid="${sid}" data-v="${n}">${n ? n + '.' : 'nein'}</button>`).join('')}</div></div>
     ${s.abi ? `<div class="field-row"><span>Abiturprüfung</span>${ex != null ? `<b class="pt ${tone(ex)}">${ex}</b><button class="mini" data-act="delExam" data-sid="${sid}">Löschen</button>` : `<button class="mini acc" data-act="addGrade" data-sid="${sid}" data-hj="abi">Punkte eintragen</button>`}</div>` : ''}
     <div class="hjs">${hjs}</div>
@@ -828,7 +832,7 @@ export const confirmDelete = (sid) => { S_CONFIRM = sid; };
 export function addSheet(G, A) {
   const sub = G.subjects.find((s) => s.id === A.sid) || G.subjects[0];
   const isAbi = A.hj === 'abi';
-  const hjBtns = HJ.map((h, i) => `<button class="${A.hj === i ? 'on' : ''}" data-act="addSet" data-k="hj" data-v="${i}">${h}</button>`).join('')
+  const hjBtns = hjsOf(sub).map((i) => `<button class="${A.hj === i ? 'on' : ''}" data-act="addSet" data-k="hj" data-v="${i}">${HJ[i]}</button>`).join('')
     + (sub?.abi ? `<button class="${isAbi ? 'on' : ''}" data-act="addSet" data-k="hj" data-v="abi">Abi</button>` : '');
   return `<div class="sheet-body">
     <h3 class="sheet-title">Note eintragen</h3>
@@ -840,11 +844,16 @@ export function addSheet(G, A) {
   </div>`;
 }
 
-export function newSubjectSheet() {
+export function newSubjectSheet(A = { name: '', q1: true }) {
+  const ideas = ['Religion', 'Projektkurs Sport', 'Philosophie', 'Kunst', 'Musik', 'Literatur', 'Physik', 'Informatik'];
   return `<div class="sheet-body">
     <h3 class="sheet-title">Fach hinzufügen</h3>
+    <p class="muted">Für Fächer, die nicht (mehr) in Untis stehen – zum Beispiel Kurse, die du nur in der Q1 hattest.</p>
     <form class="form" data-submit="saveSubject">
-      <label class="field"><span>Name</span><input class="input" name="name" maxlength="40" placeholder="z. B. Physik" required autocomplete="off"></label>
+      <label class="field"><span>Name</span><input class="input" name="name" maxlength="40" value="${esc(A.name || '')}" placeholder="z. B. Projektkurs Sport" required autocomplete="off"></label>
+      <div class="chips">${ideas.map((n) => `<button type="button" class="chip" data-act="subjIdea" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+      <div class="field-row"><span>Belegt</span></div>
+      <div class="seg small"><button type="button" class="${A.q1 ? 'on' : ''}" data-act="newQ1" data-v="1">Nur in der Q1</button><button type="button" class="${!A.q1 ? 'on' : ''}" data-act="newQ1" data-v="0">Q1 + Q2</button></div>
       <button class="btn" type="submit">Hinzufügen</button>
     </form>
     <button class="btn link" data-act="closeSheet">Abbrechen</button>

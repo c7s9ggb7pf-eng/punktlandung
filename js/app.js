@@ -301,6 +301,13 @@ function askCoursesOnce() {
   setTimeout(() => { if (S.screen === 'main' && !document.querySelector('.sheet')) actions.openCourses(); }, 600);
 }
 
+/** Beim Noteneintragen: Halbjahr auf eines setzen, in dem das Fach belegt ist (nur-Q1-Fächer → Q1.2). */
+function fitHj() {
+  const sub = S.grades.subjects.find((s) => s.id === S.add.sid);
+  const ok = G.hjsOf(sub);
+  if (S.add.hj !== 'abi' && !ok.includes(S.add.hj)) S.add.hj = ok[ok.length - 1];
+}
+
 function saveGrades() {
   if (!S.demo) store.grades = S.grades;
 }
@@ -531,6 +538,7 @@ const actions = {
     const hj = el?.dataset.hj === 'abi' ? 'abi' : el?.dataset.hj != null ? Number(el.dataset.hj) : Math.max(0, cur);
     S.add = { sid: el?.dataset.sid || S.add.sid || S.grades.subjects[0].id, hj, kind: S.add.kind || 'k' };
     if (!S.grades.subjects.some((s) => s.id === S.add.sid)) S.add.sid = S.grades.subjects[0].id;
+    fitHj();
     S._fromSubject = el?.dataset.sid || null;
     openSheet(V.addSheet(S.grades, S.add));
   },
@@ -539,6 +547,7 @@ const actions = {
     const v = el.dataset.v;
     S.add[k] = k === 'hj' ? (v === 'abi' ? 'abi' : Number(v)) : v;
     if (k === 'sid' && S.add.hj === 'abi' && !S.grades.subjects.find((s) => s.id === v)?.abi) S.add.hj = Math.max(0, G.currentHj(S.grades.abiYear));
+    if (k === 'sid') fitHj();
     updateSheet(V.addSheet(S.grades, S.add));
   },
   saveGrade(el) {
@@ -557,11 +566,27 @@ const actions = {
     } else closeSheet();
     render();
   },
-  addSubject() { openSheet(V.newSubjectSheet()); setTimeout(() => document.querySelector('.sheet input[name="name"]')?.focus(), 350); },
+  addSubject() {
+    S.newSub = { name: '', q1: true };
+    openSheet(V.newSubjectSheet(S.newSub));
+    setTimeout(() => document.querySelector('.sheet input[name="name"]')?.focus(), 350);
+  },
+  subjIdea(el) {
+    const input = document.querySelector('.sheet input[name="name"]');
+    if (input) input.value = el.dataset.v;
+    haptic(5);
+  },
+  newQ1(el) {
+    S.newSub = { name: document.querySelector('.sheet input[name="name"]')?.value || '', q1: el.dataset.v === '1' };
+    updateSheet(V.newSubjectSheet(S.newSub));
+  },
+  setQ1(el) {
+    patchSubject(el.dataset.sid, { q1: el.dataset.v === '1' });
+  },
   saveSubject(form) {
     const name = String(new FormData(form).get('name') || '').trim();
     if (!name) return;
-    S.grades.subjects.push({ id: G.uid(), name, su: name.slice(0, 3).toUpperCase(), lk: false, abi: 0 });
+    S.grades.subjects.push({ id: G.uid(), name, su: name.slice(0, 3).toUpperCase(), lk: false, abi: 0, q1: S.newSub?.q1 !== false, manual: true });
     saveGrades();
     closeSheet();
     render();

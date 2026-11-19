@@ -2,7 +2,7 @@
 //
 // Datenform (localStorage „pl.grades“):
 //   { abiYear: 2027,
-//     subjects: [{ id, name, su, lk: bool, abi: 0–4 }],
+//     subjects: [{ id, name, su, lk: bool, abi: 0–4, q1: bool (nur in der Q1 belegt), manual: bool (selbst angelegt) }],
 //     entries:  [{ id, sid, hj: 0–3, kind: 'k' | 's' | 'z', pts, at }],   // Klausur, Sonstige Mitarbeit, Zeugnis
 //     exams:    { [sid]: pts } }                                          // Abiturprüfung
 
@@ -12,6 +12,10 @@ const NOTE = ['6', '5-', '5', '5+', '4-', '4', '4+', '3-', '3', '3+', '2-', '2',
 export const noteOf = (p) => NOTE[p] ?? '';
 export const tone = (p) => (p >= 13 ? 'g1' : p >= 10 ? 'g2' : p >= 5 ? 'g3' : 'g4');
 export const fmt1 = (x) => (x == null || Number.isNaN(x) ? '–' : x.toFixed(1).replace('.', ','));
+
+/** Halbjahre, in denen ein Fach belegt ist (nur-Q1-Fächer: Q1.1 und Q1.2). */
+export const hjsOf = (s) => (s?.q1 ? [0, 1] : [0, 1, 2, 3]);
+export const baseName = (n) => String(n || '').replace(/\s+(LK|GK|ZK)$/i, '').trim().toLowerCase();
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -68,7 +72,7 @@ export function syncSubjects(G, courses) {
       Object.assign(s, { name: w.name, su: w.su, lk: s.lk || w.lk });
       want.delete(key(w.name));
       keep.push(s);
-    } else if (used(s)) keep.push(s);
+    } else if (used(s) || s.manual || s.q1) keep.push(s);
   }
   for (const w of want.values()) keep.push({ id: uid(), name: w.name, su: w.su, lk: w.lk, abi: 0 });
   G.subjects = keep.sort((a, b) => Number(b.lk) - Number(a.lk) || a.name.localeCompare(b.name, 'de'));
@@ -91,7 +95,8 @@ export function hjResult(G, sid, hj) {
 }
 
 export function subjectAvg(G, sid) {
-  return avg(HJ.map((_, i) => hjResult(G, sid, i)).filter(Boolean).map((r) => r.pts));
+  const sub = G.subjects.find((x) => x.id === sid);
+  return avg(hjsOf(sub).map((i) => hjResult(G, sid, i)).filter(Boolean).map((r) => r.pts));
 }
 
 /**
@@ -104,7 +109,7 @@ export function subjectAvg(G, sid) {
 export function abi(G) {
   const courses = [];
   for (const sub of G.subjects) {
-    HJ.forEach((_, hj) => {
+    hjsOf(sub).forEach((hj) => {
       const r = hjResult(G, sub.id, hj);
       if (r) courses.push({ sid: sub.id, hj, pts: r.pts, est: r.est, lk: sub.lk, must: sub.lk || sub.abi > 0 });
     });
@@ -154,10 +159,10 @@ export function goal(G, target, curHj = currentHj(G.abiYear), running = null) {
   for (const s of G.subjects) {
     const own = G.entries.filter((e) => e.sid === s.id);
     const last = own.length ? Math.max(...own.map((e) => e.hj)) : -1;
-    HJ.forEach((_, hj) => {
+    hjsOf(s).forEach((hj) => {
       if (hj < from || own.some((e) => e.hj === hj)) return;
       if (last >= 0 && last < hj - 1) return; // Fach ist schon vorbei (z. B. nur in der Q1)
-      if (running?.size && !running.has(s.name) && own.length) return; // nicht mehr im Stundenplan
+      if (running?.size && !running.has(baseName(s.name)) && own.length && !s.manual) return; // nicht mehr im Stundenplan
       open.push({ sid: s.id, hj });
     });
   }
