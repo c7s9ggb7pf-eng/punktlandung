@@ -7,7 +7,7 @@ import {
   today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod, parseDay,
   WD, WD_LONG, isIOS, isStandalone, pushSupported, permission, VERSION,
 } from './lib.js';
-import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi, goal, hjsOf, baseName, admission, examNeed } from './grades.js';
+import { HJ, KIND, noteOf, tone, fmt1, currentHj, hjResult, subjectAvg, abi, goal, hjsOf, baseName, admission, examNeed, pointsFor } from './grades.js';
 
 const wordmark = (cls = '') => `<span class="wordmark ${cls}" aria-label="Punktlandung">punktlandung<span class="wm-dot"></span></span>`;
 
@@ -747,6 +747,44 @@ function ring(r) {
 
 const GOALS = [1.0, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0];
 
+/** Wunschnoten-Chips: feste Auswahl + eigene Note (falls gesetzt) + „Andere…“. */
+function goalChips(target) {
+  const list = GOALS.includes(target) ? GOALS : [...GOALS, target].sort((a, b) => a - b);
+  return list.map((n) => `<button class="chip ${n === target ? 'on' : ''}" data-act="${GOALS.includes(n) ? 'setGoal' : 'goalCustom'}" data-v="${n}">${fmt1(n)}</button>`).join('')
+    + '<button class="chip goal-own" data-act="goalCustom">Andere …</button>';
+}
+
+/** Blatt: eigene Wunschnote eintippen (1,0–4,0). */
+export function goalSheet(G) {
+  const cur = G.goal ?? 1.5;
+  return `<form class="sheet-body" data-submit="goalSave">
+    <h3 class="sheet-title">Eigene Wunschnote</h3>
+    <p class="muted">Tipp deinen Wunsch-Schnitt ein, zum Beispiel 1,4 oder 2,3 – möglich ist alles von 1,0 bis 4,0.</p>
+    <label class="field"><span>Wunschnote</span><input class="input goal-input" name="goal" inputmode="decimal" autocomplete="off" maxlength="4" placeholder="z. B. 1,4" value="${fmt1(cur)}" required></label>
+    <p class="field-err" hidden>Bitte eine Note zwischen 1,0 und 4,0 eingeben.</p>
+    <button class="btn" type="submit">Übernehmen</button>
+  </form>`;
+}
+
+/** Wie viele Gesamtpunkte noch bis zur nächstbesseren Abinote fehlen. */
+export function nextStep(G, r) {
+  if (!r) return null;
+  if (!r.passed) return r.total < 300 ? { note: 4.0, diff: 300 - r.total, pass: true } : null;
+  if (r.note <= 1.0) return { best: true };
+  const note = Math.round((r.note - 0.1) * 10) / 10;
+  const diff = pointsFor(note) - r.total;
+  const perExam = G.bll?.on ? 4 : 5;
+  return { note, diff, exam: r.examsMissing ? Math.ceil(diff / perExam) : null };
+}
+
+function nextLine(G, r) {
+  const n = nextStep(G, r);
+  if (!n) return '';
+  if (n.best) return '<p class="abi-next best"><b>1,0</b> – besser geht es nicht.</p>';
+  const ex = n.exam && n.exam <= 15 ? `<small>z. B. ${n.exam === 1 ? '1 Punkt' : `${n.exam} Punkte`} mehr in einer Abiprüfung</small>` : '';
+  return `<p class="abi-next"><span class="abi-up">↑</span><span>Noch <b>${n.diff} ${n.diff === 1 ? 'Punkt' : 'Punkte'}</b> bis zur <b>${n.pass ? '4,0 (bestanden)' : fmt1(n.note)}</b>${ex}</span></p>`;
+}
+
 /** Ziel-Rechner-Karte im Noten-Tab. */
 function goalCard(G, blocks) {
   const target = G.goal ?? 1.5;
@@ -769,7 +807,7 @@ function goalCard(G, blocks) {
   const pos = g.x == null ? 100 : (g.x / 15) * 100;
   return `<section class="card goal">
     <div class="goal-h"><small>Ziel-Rechner</small><span>Wunschnote</span></div>
-    <div class="chips goal-chips">${GOALS.map((n) => `<button class="chip ${n === target ? 'on' : ''}" data-act="setGoal" data-v="${n}">${fmt1(n)}</button>`).join('')}</div>
+    <div class="chips goal-chips">${goalChips(target)}</div>
     <p class="goal-big">${big}</p>
     ${!g.done && g.x != null && !g.safe ? `<div class="goal-bar"><i style="left:${pos}%"></i></div><div class="goal-scale"><span>0</span><span>5</span><span>10</span><span>15 P.</span></div>` : ''}
     <p class="goal-small">${small}</p>
@@ -851,6 +889,7 @@ function noten(S) {
         <b>${r.total}<span> / 900 P.</span></b>
         <p>${!r.passed || !adm?.ok ? 'So noch nicht bestanden – siehe „Zulassung & Bestehen“.' : r.est ? `Noch offen: ${r.hjs < 4 ? HJ.slice(r.hjs).join(', ') + (r.examsMissing ? ' und die Prüfungen' : '') : 'die Prüfungen'}` : 'Alles eingetragen.'}</p>
       </div>
+      ${nextLine(G, r)}
       <div class="abi-blocks"><span>Block I<b>${r.block1}<i>/600</i></b></span><span>Block II<b>${r.block2}<i>/300</i></b></span>${r.deficits ? `<span class="warn">Unterkurse<b>${r.deficits}</b></span>` : ''}</div>
     </section>` : `
     <section class="card abi empty-abi">${ring(null)}<div class="abi-txt"><small>Abi-Schnitt</small><b>Noch leer</b><p>Trag deine ersten Punkte ein – der Schnitt rechnet sich dann von selbst.</p></div></section>`;

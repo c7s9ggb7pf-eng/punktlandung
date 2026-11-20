@@ -561,6 +561,21 @@ const actions = {
     haptic(5);
     render();
   },
+  goalCustom() { openSheet(V.goalSheet(S.grades)); setTimeout(() => document.querySelector('.goal-input')?.select(), 250); },
+  goalSave(f) {
+    const raw = String(new FormData(f).get('goal') || '').trim().replace(',', '.');
+    const v = Math.round(Number(raw) * 10) / 10;
+    if (!/^\d([.]\d)?$/.test(raw) || !(v >= 1 && v <= 4)) {
+      f.querySelector('.field-err')?.removeAttribute('hidden');
+      haptic(20);
+      return;
+    }
+    S.grades.goal = v;
+    saveGrades();
+    haptic(5);
+    closeSheet();
+    render();
+  },
   start() {
     S.ob.step = isIOS && !isStandalone() ? 'install' : 'school';
     render();
