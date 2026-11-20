@@ -402,6 +402,56 @@ async function chatSendText(q) {
   }
 }
 
+/** Hochladen ausgewählter Dateien ins offene Lernset (Fotos werden vorher verkleinert). */
+async function uploadFiles(files) {
+  const set = curSet();
+  if (!set || !files.length || S.busy.upload) return;
+  let done = 0;
+  for (const f of files) {
+    S.busy.upload = `Lade ${done + 1} von ${files.length} …`;
+    refreshSetSheet();
+    try {
+      const doc = await ST.prepareFile(f);
+      if (S.demo) set.docs.push({ id: 'd' + Date.now() + done, name: doc.name, mime: doc.mime, size: Math.round(doc.data.length * 0.75) });
+      else setStudy(await api('studyUpload', { setId: set.id, ...doc }, { timeout: 120000 }));
+      done++;
+    } catch (e) {
+      toast(`${f.name}: ${e.message}`, 4500);
+    }
+  }
+  S.busy.upload = null;
+  refreshSetSheet();
+  if (done) toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen.`, 3000);
+}
+
+/** Noten aus einer Sicherungsdatei zurückholen. */
+async function restoreFrom(f) {
+  try {
+    const d = JSON.parse(await f.text());
+    const g = d?.grades;
+    if (d?.app !== 'punktlandung' || !Array.isArray(g?.subjects) || !Array.isArray(g?.entries)) throw new Error('Das ist keine Punktlandung-Sicherung.');
+    localStorage.setItem('pl.grades.prev', JSON.stringify(S.grades));
+    S.grades = { ...G.empty(), ...g, exams: g.exams || {} };
+    saveGrades();
+    toast(`Wiederhergestellt: ${g.subjects.length} Fächer, ${g.entries.length} Noten (Stand ${String(d.at || '').slice(0, 10)}).`, 4000);
+    S.tab = 'noten';
+    render();
+  } catch (e) {
+    toast(e.message || 'Datei konnte nicht gelesen werden.', 4000);
+  }
+}
+
+// Dateiauswahl über echte Dateifelder im Seiteninhalt (iOS meldet die Auswahl sonst nicht zuverlässig zurück).
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || el.type !== 'file' || !el.dataset.file) return;
+  const files = [...(el.files || [])];
+  el.value = '';
+  if (!files.length) return;
+  if (el.dataset.file === 'study') uploadFiles(files);
+  else if (el.dataset.file === 'restore') restoreFrom(files[0]);
+});
+
 const curSet = () => S.study?.sets?.find((x) => x.id === S._studyOpen);
 function refreshSetSheet() {
   if (S._studyOpen && document.querySelector('.study-sheet')) updateSheet(ST.setSheet(S, curSet(), V));
@@ -782,34 +832,6 @@ const actions = {
     S.learn.mode = set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
     openSheet(ST.setSheet(S, curSet(), V), { onClose: () => { S._studyOpen = null; if (S.tab === 'aufgaben') render(); } });
   },
-  studyUpload() {
-    const set = curSet();
-    if (!set || S.busy.upload) return;
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.accept = 'image/*,application/pdf,text/plain,.pdf,.txt';
-    input.onchange = async () => {
-      const files = [...(input.files || [])];
-      let done = 0;
-      for (const f of files) {
-        S.busy.upload = `Lade ${done + 1} von ${files.length} …`;
-        refreshSetSheet();
-        try {
-          const doc = await ST.prepareFile(f);
-          if (S.demo) set.docs.push({ id: 'd' + Date.now() + done, name: doc.name, mime: doc.mime, size: Math.round(doc.data.length * 0.75) });
-          else setStudy(await api('studyUpload', { setId: set.id, ...doc }, { timeout: 120000 }));
-          done++;
-        } catch (e) {
-          toast(e.message, 4000);
-        }
-      }
-      S.busy.upload = null;
-      refreshSetSheet();
-      if (done) toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen${S.study?.ai ? ' – jetzt „Lernhilfe mit KI erstellen“' : ''}.`, 3200);
-    };
-    input.click();
-  },
   async studyDocDel(el) {
     const set = curSet();
     if (S.demo) { set.docs = set.docs.filter((d) => d.id !== el.dataset.v); return refreshSetSheet(); }
@@ -1051,29 +1073,6 @@ const actions = {
     } catch (e) {
       if (e?.name !== 'AbortError') toast('Sichern ging nicht: ' + (e?.message || e));
     }
-  },
-  restore() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/json,.json';
-    input.onchange = async () => {
-      const f = input.files?.[0];
-      if (!f) return;
-      try {
-        const d = JSON.parse(await f.text());
-        const g = d?.grades;
-        if (d?.app !== 'punktlandung' || !Array.isArray(g?.subjects) || !Array.isArray(g?.entries)) throw new Error('Das ist keine Punktlandung-Sicherung.');
-        localStorage.setItem('pl.grades.prev', JSON.stringify(S.grades));
-        S.grades = { ...G.empty(), ...g, exams: g.exams || {} };
-        saveGrades();
-        toast(`Wiederhergestellt: ${g.subjects.length} Fächer, ${g.entries.length} Noten (Stand ${String(d.at || '').slice(0, 10)}).`, 4000);
-        S.tab = 'noten';
-        render();
-      } catch (e) {
-        toast(e.message || 'Datei konnte nicht gelesen werden.', 4000);
-      }
-    };
-    input.click();
   },
   examGrade(el) {
     const sub = S.grades.subjects.find((s) => s.id === el.dataset.sid);

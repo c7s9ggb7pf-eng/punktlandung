@@ -1159,3 +1159,10 @@ button.doc-name small { color: oklch(55% .14 var(--h)); }
 .own-card .x { border: 0; background: none; color: var(--text-3); padding: 4px; }
 .own-card .x .ico { width: 16px; height: 16px; }
 .doc-img { display: block; width: 100%; height: auto; margin: 6px 0 12px; border-radius: 14px; }
+
+/* ---------- 1.9.2: echte Dateifelder (iOS) ---------- */
+.up-btns { display: flex; gap: 8px; }
+.up-btns .btn { flex: 1; margin: 0; }
+label.up, label.up-row { position: relative; overflow: hidden; cursor: pointer; }
+label.up input[type=file], label.up-row input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 0; }
+.up-busy { display: flex; align-items: center; justify-content: center; gap: 8px; }

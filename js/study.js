@@ -111,7 +111,10 @@ export function setSheet(S, s, V) {
     ${ai && m && showModes ? `<button class="btn soft" data-act="chatOpen" data-set="${esc(s.id)}">${icon('spark')}Fragen zum Material stellen</button>` : ''}
     <h4 class="group-label">Material · ${s.docs.length}</h4>
     <div class="docs">${docs || '<p class="muted">Noch nichts hochgeladen. Fotografier Arbeitsblätter und Hefteinträge oder lade PDFs hoch.</p>'}</div>
-    <button class="btn soft" data-act="studyUpload" ${upBusy ? 'disabled' : ''}>${upBusy ? `<span class="spin"></span>${esc(upBusy)}` : `${icon('plus')}Fotos oder PDF hinzufügen`}</button>
+    ${upBusy ? `<div class="btn soft up-busy"><span class="spin"></span>${esc(upBusy)}</div>` : `<div class="up-btns">
+      <label class="btn soft up">${icon('plus')}Fotos<input type="file" accept="image/*" multiple data-file="study" aria-label="Fotos hinzufügen"></label>
+      <label class="btn soft up">${icon('plus')}PDF / Datei<input type="file" accept="application/pdf,.pdf,text/plain,.txt" multiple data-file="study" aria-label="PDF oder Datei hinzufügen"></label>
+    </div>`}
     ${gen}${err}
     <p class="fine">Dein Material wird auf dem Punktlandung-Server gespeichert${ai ? ' und zum Erstellen an die KI (Claude von Anthropic) geschickt' : ''}; deine eigenen Karteikarten bleiben auf dem Handy. Lösch das Lernset, wenn du es nicht mehr brauchst.</p>
     <button class="btn link" data-act="studyDel" data-v="${esc(s.id)}">${S._studyDel === s.id ? 'Wirklich löschen? Nochmal tippen' : 'Lernset löschen'}</button>
