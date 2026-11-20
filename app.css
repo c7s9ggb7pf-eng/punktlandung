@@ -1029,3 +1029,85 @@ html.scrolled body::after { opacity: 1; }
 .pull.ready { color: var(--accent-ink, #fff); background: var(--accent); }
 .today-line { margin: -2px 0 6px; font-size: 14px; color: var(--text-2); }
 .today-line b { color: var(--text); font-weight: 750; }
+
+/* ---------- 1.8: Lernen für Klausuren ---------- */
+.study { margin: 18px 0 6px; padding: 12px 12px 10px; border-radius: 22px; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+.study-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 6px; border: 0; border-top: 1px solid var(--line); background: none; text-align: left; color: var(--text); }
+.study-card .subj-dot { width: 12px; height: 12px; border-radius: 4px; }
+.sc-txt { flex: 1; min-width: 0; }
+.sc-txt b { display: block; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-txt small { display: block; color: var(--text-2); font-size: 13px; margin-top: 1px; }
+.st-chip { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 99px; background: var(--card-2); color: var(--text-2); font: 650 11.5px var(--mono); }
+.st-chip.ok { color: oklch(52% .14 150); background: oklch(70% .15 150 / .15); }
+.st-chip.bad { color: var(--coral); background: color-mix(in oklab, var(--coral) 14%, transparent); }
+.st-chip.work { color: var(--accent); }
+.st-chip .spin, .gen-wait .spin, .study-empty .spin { width: 12px; height: 12px; }
+.study-sugg { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 8px; padding: 11px 12px; border: 1.5px dashed oklch(65% .14 var(--h) / .6); border-radius: 16px; background: none; color: var(--text); text-align: left; }
+.study-sugg .ico { width: 18px; height: 18px; color: oklch(60% .16 var(--h)); flex: none; }
+.study-sugg small { display: block; color: var(--text-2); font-size: 12.5px; }
+.study-empty { display: grid; gap: 4px; width: 100%; padding: 14px 8px; border: 0; background: none; color: var(--text); text-align: left; }
+.study-empty span { color: var(--text-2); font-size: 14px; line-height: 1.45; }
+.study-sheet .group-label { margin: 18px 4px 8px; }
+.docs { display: grid; gap: 6px; margin-bottom: 10px; }
+.doc { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 14px; background: var(--card-2); }
+.doc-ico { flex: none; width: 42px; padding: 6px 0; border-radius: 9px; text-align: center; font: 700 9.5px var(--mono); letter-spacing: .06em; color: #fff; background: oklch(62% .15 var(--h)); }
+.doc-name { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-name small { display: block; color: var(--text-3); font-size: 12px; }
+.doc .x { border: 0; background: none; color: var(--text-3); padding: 6px; }
+.doc .x .ico { width: 16px; height: 16px; }
+.gen-wait { display: flex; gap: 12px; align-items: center; margin: 12px 0; padding: 14px; border-radius: 16px; background: color-mix(in oklab, var(--accent) 10%, var(--card)); }
+.gen-wait small { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; }
+.gen-err { margin: 8px 2px; color: var(--coral); font-size: 14px; }
+.learn-seg { margin: 12px 0 10px; }
+.learn { margin-bottom: 6px; }
+.ov-lead { font-size: 15px; line-height: 1.55; margin: 4px 2px 12px; }
+.ov-sec { margin: 0 0 12px; padding: 12px 14px; border-radius: 16px; background: var(--card-2); }
+.ov-sec b { display: block; margin-bottom: 4px; }
+.ov-sec ul { margin: 0; padding-left: 18px; line-height: 1.5; font-size: 14.5px; }
+.terms { margin: 0; display: grid; gap: 8px; }
+.terms dt { font-weight: 750; font-size: 14px; }
+.terms dd { margin: 1px 0 0; color: var(--text-2); font-size: 14px; }
+.cards-top { display: flex; justify-content: space-between; color: var(--text-3); font: 600 11.5px var(--mono); margin: 2px 2px 6px; }
+.pbar { height: 5px; border-radius: 99px; background: var(--card-2); overflow: hidden; margin-bottom: 12px; }
+.pbar i { display: block; height: 100%; border-radius: 99px; background: oklch(64% .16 var(--h)); transition: width .3s; }
+.flash { position: relative; display: block; width: 100%; min-height: 190px; border: 0; padding: 0; background: none; perspective: 1200px; }
+.flash .face { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 22px 20px; border-radius: 22px; text-align: center;
+  font: 650 18px/1.4 var(--body, inherit); color: var(--text); background: var(--card-2); box-shadow: 0 0 0 1.5px oklch(65% .14 var(--h) / .45);
+  backface-visibility: hidden; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+.flash .face small { font: 650 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: oklch(58% .15 var(--h)); }
+.flash .face em { font-style: normal; font-size: 12px; color: var(--text-3); font-weight: 500; }
+.flash .back { transform: rotateY(180deg); background: oklch(64% .15 var(--h) / .14); font-weight: 550; font-size: 16.5px; }
+.flash.flip .front { transform: rotateY(-180deg); }
+.flash.flip .back { transform: rotateY(0); }
+.card-btns { display: flex; gap: 8px; margin-top: 12px; }
+.card-btns .btn { flex: 1; margin: 0; }
+.only-open { margin-top: 10px; padding: 8px 4px; border: 0; font-size: 14px; }
+.learn-done { display: grid; gap: 8px; padding: 18px 16px; border-radius: 18px; background: var(--card-2); text-align: center; }
+.learn-done b { font-size: 17px; }
+.learn-done span { color: var(--text-2); font-size: 14px; }
+.quiz-q { font-weight: 700; font-size: 16.5px; line-height: 1.4; margin: 6px 2px 12px; }
+.quiz-opts { display: grid; gap: 8px; }
+.qopt { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 12px; border: 0; border-radius: 14px; background: var(--card-2); color: var(--text); text-align: left; font-size: 15px; line-height: 1.35; }
+.qopt span { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; background: var(--card); font: 700 12px var(--mono); }
+.qopt.right { background: oklch(70% .15 150 / .22); box-shadow: 0 0 0 1.5px oklch(62% .15 150); }
+.qopt.wrong { background: color-mix(in oklab, var(--coral) 18%, transparent); box-shadow: 0 0 0 1.5px var(--coral); }
+.qopt.dim { opacity: .5; }
+.quiz-exp { margin: 12px 2px; font-size: 14.5px; line-height: 1.45; }
+.quiz-exp.ok b { color: oklch(55% .15 150); } .quiz-exp.bad b { color: var(--coral); }
+.exam-list { display: grid; gap: 8px; margin-top: 10px; }
+.exam-q { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; border: 0; border-radius: 14px; background: var(--card-2); color: var(--text); text-align: left; }
+.exam-q .eq { flex: 1; font-size: 14.5px; line-height: 1.35; }
+.op { flex: none; padding: 3px 7px; border-radius: 7px; background: oklch(64% .15 var(--h) / .18); color: oklch(52% .15 var(--h)); font: 700 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+.exam-input { min-height: 150px; margin: 4px 0 10px; font-size: 15px; line-height: 1.45; }
+.back { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 4px; padding-left: 0; }
+.exam-res { margin: 12px 0; padding: 14px; border-radius: 16px; background: var(--card-2); }
+.er-top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.pt.big { min-width: 44px; height: 44px; font-size: 20px; }
+.er-h { display: block; margin-top: 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
+.er-h.ok { color: oklch(55% .15 150); } .er-h.bad { color: var(--coral); }
+.exam-res ul { margin: 4px 0 0; padding-left: 18px; font-size: 14.5px; line-height: 1.45; }
+.er-tip { display: flex; gap: 8px; margin: 10px 0 0; font-size: 14.5px; line-height: 1.45; }
+.er-tip .ico { flex: none; width: 18px; height: 18px; color: var(--accent); }
+.expect { margin: 8px 0; padding: 10px 12px; border-radius: 14px; background: var(--card-2); }
+.expect summary { cursor: pointer; font-weight: 650; font-size: 14px; color: var(--text-2); }
+.expect p { margin: 8px 0 2px; font-size: 14px; line-height: 1.5; }

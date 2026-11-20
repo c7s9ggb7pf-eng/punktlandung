@@ -1,6 +1,7 @@
 // Punktlandung – Ansichten (reines HTML aus dem Zustand).
 import { esc, icon, hue, flap } from './ui.js';
 import { store } from './lib.js';
+import { studySection } from './study.js';
 import {
   today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod, parseDay,
   WD, WD_LONG, isIOS, isStandalone, pushSupported, permission, VERSION,
@@ -564,6 +565,7 @@ function tasks(S) {
     <h1 class="title">Aufgaben</h1>
     <button class="btn" data-act="hwNew">${icon('plus')}Hausaufgabe eintragen</button>
     ${list}
+    ${studySection(S, blocks)}
     ${examsCard(blocks)}
     ${done.length ? `<h4 class="group-label">Erledigt</h4><div class="hw tasks-list">${done.map(hwItem).join('')}</div>` : ''}`;
 }
@@ -1197,7 +1199,8 @@ export function lessonSheet(b, hw = []) {
     <div>${status}${b.st === 'cancel' && b.d >= today() ? ` <span class="pill ghost">${esc(until(b.d, b.s))}</span>` : ''}</div>
     <dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
     ${(hw || []).filter((h) => h.subject === b.sl && h.due === b.d).map((h) => `<button class="hw-due ${h.done ? 'done' : ''}" data-act="hwEdit" data-v="${esc(h.id)}"><small>Hausaufgabe für diese Stunde</small>${esc(h.text)}</button>`).join('')}
-    ${b.st === 'exam' && b.d > today() ? `<button class="btn" data-act="examStudy" data-i="${esc(b.ks[0])}">${icon('bell')}Lern-Erinnerung 3 Tage vorher</button>` : ''}
+    ${b.st === 'exam' && b.d >= today() ? `<button class="btn" data-act="studyNew" data-subject="${esc(b.sl)}" data-su="${esc(b.su)}" data-date="${b.d}">${icon('spark')}Material hochladen & lernen</button>` : ''}
+    ${b.st === 'exam' && b.d > today() ? `<button class="btn soft" data-act="examStudy" data-i="${esc(b.ks[0])}">${icon('bell')}Lern-Erinnerung 3 Tage vorher</button>` : ''}
     <button class="btn ${b.st === 'exam' && b.d > today() ? 'soft' : ''}" data-act="hwNew" data-subject="${esc(b.sl)}" data-su="${esc(b.su)}" data-from="${b.d}">${icon('plus')}Hausaufgabe eintragen</button>
     ${b.st === 'cancel' && b.d >= today() ? `<button class="btn soft" data-act="shareCancel" data-i="${esc(b.ks[0])}">${icon('share')}Ausfall teilen</button>` : ''}
     <button class="btn soft" data-act="closeSheet">Schließen</button>

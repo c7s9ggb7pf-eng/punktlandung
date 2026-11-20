@@ -8,6 +8,7 @@ import * as V from './views.js';
 import { toast, confetti, openSheet, updateSheet, closeSheet, haptic, runFlaps, resetFlaps, flapTo } from './ui.js';
 import { demoState, demoGrades } from './demo.js';
 import * as G from './grades.js';
+import * as ST from './study.js';
 
 const root = document.getElementById('app');
 
@@ -21,6 +22,8 @@ const S = {
   lastSeenEvent: store.lastSeenEvent,
   grades: store.grades || G.empty(),
   add: { sid: null, hj: 0, kind: 'k' },
+  study: null, // { ai, sets, loading }
+  learn: { mode: 'over', ci: 0, flip: false, onlyOpen: false, qi: 0, pick: null, score: 0, ei: null },
   ob: { step: 'welcome', query: '', results: [], tooMany: false, searching: false, searchError: '', school: null, mode: 'password', busy: false, error: '', draft: {}, nameGuess: '' },
 };
 window.__pl = S; // für die Fehlersuche
@@ -354,6 +357,42 @@ function buildIcs() {
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Punktlandung//DE', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Punktlandung', ...ev, 'END:VCALENDAR'].join('\r\n') + '\r\n';
 }
 
+// ---------- 1.8: Lernen ----------
+const curSet = () => S.study?.sets?.find((x) => x.id === S._studyOpen);
+function refreshSetSheet() {
+  if (S._studyOpen && document.querySelector('.study-sheet')) updateSheet(ST.setSheet(S, curSet(), V));
+}
+function setStudy(r) {
+  S.study = { ai: !!r.ai, sets: r.sets || [], loading: false };
+  if (S.screen === 'main' && S.tab === 'aufgaben' && !document.querySelector('.sheet')) render();
+  refreshSetSheet();
+  pollStudy();
+}
+async function loadStudy() {
+  if (S.demo) {
+    if (!S.study) S.study = ST.demoStudy(S.state?.snapshot?.blocks || []);
+    return;
+  }
+  if (!S.study) S.study = { ai: false, sets: [], loading: true };
+  try { setStudy(await api('studyList')); } catch (e) { S.study.loading = false; if (!(e instanceof ApiError && e.status === 401)) toast(e.message); }
+}
+let studyTimer = null;
+function pollStudy() {
+  const working = S.study?.sets?.some((x) => x.status === 'working');
+  if (!working || studyTimer || S.demo) return;
+  studyTimer = setTimeout(async () => {
+    studyTimer = null;
+    const was = new Set(S.study.sets.filter((x) => x.status === 'working').map((x) => x.id));
+    await loadStudy();
+    for (const x of S.study.sets) {
+      if (!was.has(x.id) || x.status === 'working') continue;
+      haptic(15);
+      toast(x.status === 'ready' ? `Lernhilfe für ${x.material?.topic || x.subject} ist fertig 🎉` : x.error || 'Lernhilfe ging schief.', 3800);
+    }
+  }, 4000);
+}
+const learnReset = () => { S.learn = { mode: S.learn.mode || 'over', ci: 0, flip: false, onlyOpen: false, qi: 0, pick: null, score: 0, ei: null }; };
+
 function saveGrades() {
   if (!S.demo) store.grades = S.grades;
 }
@@ -525,6 +564,7 @@ const actions = {
   },
   tab(el) {
     S.tab = el.dataset.v;
+    if (S.tab === 'aufgaben') loadStudy();
     if (S.tab === 'noten') ensureSubjects();
     haptic(5);
     render();
@@ -638,6 +678,187 @@ const actions = {
     } else closeSheet();
     render();
   },
+  // ---------- 1.8: Lernen für Klausuren ----------
+  studyNew(el) {
+    S.newSet = { subject: el?.dataset.subject || '', su: el?.dataset.su || '', title: '', examDate: el?.dataset.date || '' };
+    openSheet(ST.newSetSheet(S, S.newSet));
+  },
+  studySet(el) {
+    S.newSet.subject = el.dataset.v;
+    S.newSet.su = el.dataset.su || '';
+    updateSheet(ST.newSetSheet(S, S.newSet));
+  },
+  async studyCreate() {
+    const A = S.newSet;
+    if (!A?.subject || S.busy.study) return;
+    if (S.demo) {
+      const id = 'demo' + Date.now();
+      S.study.sets.unshift({ id, subject: A.subject, su: A.su, title: A.title, examDate: A.examDate || null, status: 'new', docs: [], material: null });
+      return actions.studyOpen({ dataset: { v: id } });
+    }
+    S.busy.study = true;
+    updateSheet(ST.newSetSheet(S, A));
+    try {
+      const r = await api('studyCreate', { subject: A.subject, su: A.su, title: A.title, examDate: A.examDate });
+      S.busy.study = false;
+      setStudy(r);
+      actions.studyOpen({ dataset: { v: r.id } });
+    } catch (e) {
+      S.busy.study = false;
+      updateSheet(ST.newSetSheet(S, A));
+      toast(e.message);
+    }
+  },
+  studyOpen(el) {
+    S._studyOpen = el.dataset.v;
+    S._studyDel = null;
+    learnReset();
+    S.learn.mode = 'over';
+    openSheet(ST.setSheet(S, curSet(), V), { onClose: () => { S._studyOpen = null; if (S.tab === 'aufgaben') render(); } });
+  },
+  studyUpload() {
+    const set = curSet();
+    if (!set || S.busy.upload) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = 'image/*,application/pdf,text/plain,.pdf,.txt';
+    input.onchange = async () => {
+      const files = [...(input.files || [])];
+      let done = 0;
+      for (const f of files) {
+        S.busy.upload = `Lade ${done + 1} von ${files.length} …`;
+        refreshSetSheet();
+        try {
+          const doc = await ST.prepareFile(f);
+          if (S.demo) set.docs.push({ id: 'd' + Date.now() + done, name: doc.name, mime: doc.mime, size: Math.round(doc.data.length * 0.75) });
+          else setStudy(await api('studyUpload', { setId: set.id, ...doc }, { timeout: 120000 }));
+          done++;
+        } catch (e) {
+          toast(e.message, 4000);
+        }
+      }
+      S.busy.upload = null;
+      refreshSetSheet();
+      if (done) toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen${S.study?.ai ? ' – jetzt „Lernhilfe mit KI erstellen“' : ''}.`, 3200);
+    };
+    input.click();
+  },
+  async studyDocDel(el) {
+    const set = curSet();
+    if (S.demo) { set.docs = set.docs.filter((d) => d.id !== el.dataset.v); return refreshSetSheet(); }
+    try { setStudy(await api('studyDocDelete', { id: el.dataset.v })); } catch (e) { toast(e.message); }
+  },
+  async studyGen() {
+    const set = curSet();
+    if (!set) return;
+    if (S.demo) return toast('Vorschau – die KI läuft nur mit echtem Konto.');
+    try {
+      setStudy(await api('studyGenerate', { id: set.id }, { timeout: 30000 }));
+      haptic(10);
+    } catch (e) { toast(e.message, 4000); }
+  },
+  async studyDel(el) {
+    const id = el.dataset.v;
+    if (S._studyDel !== id) { S._studyDel = id; return refreshSetSheet(); }
+    S._studyDel = null;
+    try { localStorage.removeItem('pl.study.' + id); } catch { /* egal */ }
+    if (S.demo) S.study.sets = S.study.sets.filter((x) => x.id !== id);
+    else { try { setStudy(await api('studyDelete', { id })); } catch (e) { return toast(e.message); } }
+    closeSheet();
+    render();
+  },
+  learnMode(el) {
+    learnReset();
+    S.learn.mode = el.dataset.v;
+    haptic(5);
+    refreshSetSheet();
+  },
+  cardFlip() { S.learn.flip = !S.learn.flip; haptic(5); refreshSetSheet(); },
+  cardKnown() {
+    const set = curSet();
+    const order = ST.cardOrder(set, S.learn.onlyOpen);
+    const pos = Math.min(S.learn.ci, order.length - 1);
+    const p = ST.progress(set.id);
+    if (!p.known.includes(order[pos])) p.known.push(order[pos]);
+    ST.saveProgress(set.id, p);
+    S.learn.flip = false;
+    if (!S.learn.onlyOpen) S.learn.ci = pos + 1 >= order.length ? 0 : pos + 1;
+    else if (pos >= order.length - 1) S.learn.ci = 0;
+    if (p.known.length >= (set.material?.cards?.length || 0)) confetti({ y: 0.5, count: 80 });
+    haptic(10);
+    refreshSetSheet();
+  },
+  cardAgain() {
+    const set = curSet();
+    const order = ST.cardOrder(set, S.learn.onlyOpen);
+    const p = ST.progress(set.id);
+    const pos = Math.min(S.learn.ci, order.length - 1);
+    p.known = p.known.filter((i) => i !== order[pos]);
+    ST.saveProgress(set.id, p);
+    S.learn.flip = false;
+    const n = ST.cardOrder(set, S.learn.onlyOpen).length;
+    S.learn.ci = S.learn.onlyOpen ? (pos + 1 < n ? pos + 1 : 0) : (pos + 1) % Math.max(1, n);
+    refreshSetSheet();
+  },
+  cardsOnlyOpen(el) { S.learn.onlyOpen = el.checked; S.learn.ci = 0; S.learn.flip = false; refreshSetSheet(); },
+  cardsReset() {
+    const set = curSet();
+    const p = ST.progress(set.id);
+    p.known = [];
+    ST.saveProgress(set.id, p);
+    S.learn.ci = 0;
+    S.learn.flip = false;
+    refreshSetSheet();
+  },
+  quizPick(el) {
+    if (S.learn.pick != null) return;
+    const q = curSet().material.quiz[S.learn.qi];
+    S.learn.pick = Number(el.dataset.v);
+    if (S.learn.pick === q.correct) { S.learn.score++; haptic(10); } else haptic(25);
+    refreshSetSheet();
+  },
+  quizNext() {
+    const set = curSet();
+    S.learn.qi++;
+    S.learn.pick = null;
+    if (S.learn.qi >= set.material.quiz.length) {
+      const p = ST.progress(set.id);
+      p.best = Math.max(p.best ?? 0, S.learn.score);
+      ST.saveProgress(set.id, p);
+      if (S.learn.score === set.material.quiz.length) setTimeout(() => confetti({ y: 0.5, count: 110 }), 150);
+    }
+    refreshSetSheet();
+  },
+  quizRestart() { S.learn.qi = 0; S.learn.pick = null; S.learn.score = 0; refreshSetSheet(); },
+  examOpen(el) { S.learn.ei = Number(el.dataset.v); refreshSetSheet(); },
+  examBack() { S.learn.ei = null; refreshSetSheet(); },
+  async examCheck() {
+    const set = curSet();
+    const i = S.learn.ei;
+    const answer = (document.querySelector('.exam-input')?.value || '').trim();
+    if (answer.length < 3) return toast('Schreib erst eine Antwort.');
+    const p = ST.progress(set.id);
+    p.answers[i] = answer;
+    ST.saveProgress(set.id, p);
+    if (S.demo) {
+      p.results[i] = { points: 10, verdict: 'Solide Antwort mit klarer Struktur (Vorschau).', good: ['Richtige Fachbegriffe'], missing: ['Ein konkretes Beispiel aus dem Material'], tip: 'Beim Operator „assess“ brauchst du ein begründetes eigenes Urteil am Ende.' };
+      ST.saveProgress(set.id, p);
+      return refreshSetSheet();
+    }
+    S.busy.check = true;
+    refreshSetSheet();
+    try {
+      const r = await api('studyCheck', { id: set.id, index: i, answer }, { timeout: 90000 });
+      const q = ST.progress(set.id);
+      q.results[i] = r;
+      ST.saveProgress(set.id, q);
+      if (r.points >= 13) setTimeout(() => confetti({ y: 0.5, count: 80 }), 150);
+    } catch (e) { toast(e.message, 4000); }
+    S.busy.check = false;
+    refreshSetSheet();
+  },
+
   // ---------- 1.7: Lernen, Teilen, Kalender, Countdown ----------
   async examStudy(el) {
     const b = blockByKey(el.dataset.i);
@@ -1012,6 +1233,15 @@ const actions = {
 };
 
 const inputs = {
+  studyTitle(el) { if (S.newSet) S.newSet.title = el.value; },
+  studyDate(el) { if (S.newSet) S.newSet.examDate = el.value; },
+  examAnswer(el) {
+    const set = curSet();
+    if (!set || S.learn.ei == null) return;
+    const p = ST.progress(set.id);
+    p.answers[S.learn.ei] = el.value;
+    ST.saveProgress(set.id, p);
+  },
   abiDate(el) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
     S.grades.abiDate = el.value;
@@ -1119,6 +1349,7 @@ async function boot() {
     render();
     await loadState();
     if (S._newHw) { S._newHw = false; actions.hwNew({ dataset: {} }); }
+    if (S.tab === 'aufgaben') loadStudy();
     syncPush();
     askCoursesOnce();
   } else {
