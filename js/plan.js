@@ -1,7 +1,7 @@
 // Punktlandung – Aufgabenstellung, Lernzettel und tägliche Übung bis zur Klausur (Ansichten).
 import { esc, icon } from './ui.js';
-import { today, dateLong, dayWord, addDays } from './lib.js';
-import { progress } from './study.js';
+import { today, dateLong, dayWord, addDays, daysFromToday } from './lib.js';
+import { progress, saveProgress } from './study.js';
 
 export const TASK_CHIPS = [
   'Sachtextanalyse + Erörterung', 'Gedichtinterpretation', 'Dramenszene analysieren', 'Quellenanalyse + Beurteilung',
@@ -40,14 +40,67 @@ export function dayIndex(plan, pick) {
   return days.length - 1;
 }
 
+/** Übungstage ab heute bis zum Tag vor der Klausur (1–14), ohne Datum 7 – wie auf dem Server. */
+export function planDates(exam, from = today()) {
+  const n = exam ? Math.max(1, Math.min(14, daysFromToday(exam) - daysFromToday(from))) : 7;
+  return Array.from({ length: n }, (_, i) => addDays(from, i));
+}
+
+/**
+ * Lernplan ohne KI: sofort da, sobald Material hochgeladen ist. Phasen: sichten → zusammenfassen →
+ * Karteikarten → Klausuraufgaben üben → Generalprobe. Erledigt-Häkchen nur auf dem Handy.
+ */
+export function localPlan(s) {
+  if (!s?.docs?.length) return null;
+  const p = progress(s.id);
+  // Startdatum merken, damit „Tag 1“ nicht jeden Tag neu beginnt (neu ab heute, wenn sich das Klausurdatum ändert).
+  if (!p.localStart || p.localStart > today() || p.localExam !== (s.examDate || '')) {
+    p.localStart = today();
+    p.localExam = s.examDate || '';
+    saveProgress(s.id, p);
+  }
+  const start = p.localStart;
+  const dates = planDates(s.examDate, start);
+  const n = dates.length;
+  const docs = s.docs.map((d) => d.name.replace(/\.[^.]+$/, ''));
+  const doc = (i) => docs[i % docs.length];
+  const task = s.task ? `im Stil „${s.task}“` : 'wie in der Klausur';
+  const days = dates.map((date, i) => {
+    const pos = n === 1 ? 1 : i / (n - 1);
+    let focus; let minutes; let steps;
+    if (i === n - 1 && n > 1) {
+      focus = 'Generalprobe'; minutes = 30;
+      steps = ['Alle Karteikarten einmal durchgehen – nur die „Nochmal“-Karten wiederholen', `Eine Aufgabe ${task} unter Zeitdruck lösen`, 'Unklare Punkte notieren und morgen früh kurz anschauen'];
+    } else if (i === 0) {
+      focus = 'Material sichten'; minutes = 20;
+      steps = [`Alles Material durchblättern (${docs.length} ${docs.length === 1 ? 'Dokument' : 'Dokumente'})`, 'Überschriften und wichtige Begriffe markieren', 'Notieren: Was kann ich schon? Was ist unklar?'];
+    } else if (pos < 0.4) {
+      focus = `Zusammenfassen: ${doc(i - 1)}`; minutes = 25;
+      steps = [`„${doc(i - 1)}“ in eigenen Worten zusammenfassen`, 'Fachbegriffe mit Erklärung herausschreiben', '3 Karteikarten dazu schreiben'];
+    } else if (pos < 0.7) {
+      focus = 'Karteikarten lernen'; minutes = 20;
+      steps = ['Alle Karten einmal lernen („Gewusst / Nochmal“)', `Neue Karten zu „${doc(i)}“ ergänzen`, 'Schwierige Karten laut erklären'];
+    } else {
+      focus = 'Klausuraufgaben üben'; minutes = 30;
+      steps = [`Eine Übungsaufgabe ${task} schriftlich lösen`, 'Mit dem Material vergleichen und Fehler markieren', 'Nur die offenen Karteikarten wiederholen'];
+    }
+    return { date, focus, minutes, steps, warmup: [], task: {} };
+  });
+  return { local: true, start, days, done: p.localDone || {} };
+}
+
+/** Der angezeigte Plan: der KI-Plan, sonst der Plan ohne KI. */
+export const planOf = (s) => s?.plan || localPlan(s);
+
 export function todayOpen(s) {
   const t = today();
-  return !!s.plan?.days?.some((d) => d.date === t) && !s.plan?.done?.[t];
+  const plan = planOf(s);
+  return !!plan?.days?.some((d) => d.date === t) && !plan?.done?.[t];
 }
 
 /** Ansicht „Heute“: Übung des Tages. */
 export function todayView(S, s, L) {
-  const plan = s.plan;
+  const plan = planOf(s);
   const days = plan.days || [];
   const i = dayIndex(plan, L.pd);
   const d = days[i];
@@ -62,7 +115,9 @@ export function todayView(S, s, L) {
   return `<div class="day-strip">${strip}</div>
     <div class="cards-top"><span>Tag ${i + 1} von ${days.length} · ${esc(d.date === t ? 'heute' : dayWord(d.date))}</span><span>${doneN} erledigt</span></div>
     <div class="pbar"><i style="width:${(doneN / Math.max(1, days.length)) * 100}%"></i></div>
-    <h4 class="day-focus">${esc(d.focus)}</h4>
+    <h4 class="day-focus">${esc(d.focus)}${d.minutes ? `<small> · ca. ${d.minutes} Min.</small>` : ''}</h4>
+    ${plan.local ? `<ol class="day-steps">${d.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
+      ${S.study?.ai ? (s.prepStatus === 'working' ? '<p class="muted small-note"><span class="spin"></span> Die KI erstellt gerade passende Übungen und einen Lernzettel – sie ersetzen dann diesen Plan.</p>' : '') : '<p class="muted small-note">Dein Lernplan bis zur Klausur. Tipp: Trag oben das Klausurdatum und die Aufgabenstellung ein.</p>'}` : ''}
     ${d.warmup.length ? `<div class="warmup"><b>Aufwärmen</b>${d.warmup.map((w, k) => `<details class="wq"><summary>${k + 1}. ${esc(w.q)}</summary><p>${esc(w.a)}</p></details>`).join('')}</div>` : ''}
     ${d.task.prompt ? `<div class="day-task"><b>Klausur-Übung${d.task.minutes ? ` · ca. ${d.task.minutes} Min.` : ''}</b>
       <p class="quiz-q">${d.task.operator ? `<span class="op">${esc(d.task.operator)}</span> ` : ''}${esc(d.task.prompt)}</p>
@@ -73,10 +128,10 @@ export function todayView(S, s, L) {
         ${res.missing?.length ? `<b class="er-h bad">Fehlt noch</b><ul>${res.missing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         ${res.tip ? `<p class="er-tip">${icon('spark')}${esc(res.tip)}</p>` : ''}</div>` : ''}
       <details class="expect"><summary>Erwartungshorizont zeigen</summary><p>${esc(d.task.expectation)}</p></details></div>` : ''}
-    <button class="btn ${done ? 'soft' : ''}" data-act="dayDone" data-v="${d.date}" data-done="${done ? '0' : '1'}">${icon('check')}${done ? 'Erledigt – rückgängig machen' : 'Übung erledigt'}</button>
-    <label class="row remind-row"><span class="label">Tägliche Erinnerung<small>Push an jedem Übungstag, bis du sie erledigt hast</small></span>
+    <button class="btn ${done ? 'soft' : ''}" data-act="dayDone" data-v="${d.date}" data-done="${done ? '0' : '1'}">${icon('check')}${done ? 'Erledigt – rückgängig machen' : plan.local ? 'Heute gelernt' : 'Übung erledigt'}</button>
+    ${plan.local ? '' : `<label class="row remind-row"><span class="label">Tägliche Erinnerung<small>Push an jedem Übungstag, bis du sie erledigt hast</small></span>
       <select class="input inline" data-in="remindHour">${[[-1, 'aus'], [7, '7 Uhr'], [13, '13 Uhr'], [15, '15 Uhr'], [16, '16 Uhr'], [17, '17 Uhr'], [18, '18 Uhr'], [19, '19 Uhr'], [20, '20 Uhr']]
-        .map(([h, l]) => `<option value="${h}" ${hour === h ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+        .map(([h, l]) => `<option value="${h}" ${hour === h ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`}`;
 }
 
 /** Ansicht „Lernzettel“. */

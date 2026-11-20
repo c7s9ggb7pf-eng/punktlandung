@@ -129,9 +129,10 @@ function modes(S, s, V) {
   const L = S.learn;
   const m = s.material;
   const tabs = [
-    ...(s.plan ? [['today', 'Heute'], ['sheet', 'Lernzettel']] : []),
+    ...(PL.planOf(s) ? [['today', 'Heute']] : []),
+    ...(s.sheet ? [['sheet', 'Lernzettel']] : []),
     ...(m ? [['over', 'Überblick'], ['cards', 'Karten'], ['quiz', 'Quiz'], ['exam', 'Prüfung'], ['edit', 'Eigene']]
-      : [['cards', s.plan ? 'Karten' : 'Karten lernen'], ['edit', s.plan ? 'Eigene' : 'Karten schreiben']]),
+      : [['cards', PL.planOf(s) ? 'Karten' : 'Karten lernen'], ['edit', PL.planOf(s) ? 'Eigene' : 'Karten schreiben']]),
   ];
   const mode = tabs.some(([k]) => k === L.mode) ? L.mode : tabs[0][0];
   const body = mode === 'today' ? PL.todayView(S, s, L) : mode === 'sheet' ? PL.sheetView(s)

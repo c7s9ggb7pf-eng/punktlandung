@@ -421,8 +421,19 @@ async function uploadFiles(files) {
     }
   }
   S.busy.upload = null;
+  if (done) S.learn.mode = 'today';
   refreshSetSheet();
-  if (done) toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen.`, 3000);
+  if (!done) return;
+  // Mit KI: Lernzettel + Tagesübungen gleich automatisch erstellen (nur beim ersten Mal).
+  const cur = curSet();
+  if (S.study?.ai && !S.demo && cur && !cur.plan && cur.prepStatus !== 'working') {
+    try {
+      setStudy(await api('studyPrep', { id: cur.id }, { timeout: 30000 }));
+      toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen – die KI erstellt jetzt Lernzettel und Tagesübungen.`, 4000);
+      return;
+    } catch { /* dann eben nur der Plan ohne KI */ }
+  }
+  toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen – dein Lernplan steht unter „Heute“.`, 3500);
 }
 
 /** Noten aus einer Sicherungsdatei zurückholen. */
@@ -875,7 +886,7 @@ const actions = {
     S._studyDel = null;
     learnReset();
     const set0 = curSet();
-    S.learn.mode = set0?.plan ? 'today' : set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
+    S.learn.mode = PL.planOf(set0) ? 'today' : set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
     openSheet(ST.setSheet(S, curSet(), V), { onClose: () => { S._studyOpen = null; if (S.tab === 'aufgaben') render(); } });
   },
   async studyDocDel(el) {
@@ -919,15 +930,22 @@ const actions = {
     const set = curSet();
     const date = el.dataset.v;
     const done = el.dataset.done === '1';
-    set.plan.done = { ...(set.plan.done || {}), [date]: done };
+    const local = !set.plan;
+    if (local) {
+      const p = ST.progress(set.id);
+      p.localDone = { ...(p.localDone || {}), [date]: done };
+      p.localStart = p.localStart || PL.planOf(set)?.start;
+      ST.saveProgress(set.id, p);
+    } else set.plan.done = { ...(set.plan.done || {}), [date]: done };
     refreshSetSheet();
     if (done) {
       haptic(15);
-      const all = set.plan.days.every((d) => set.plan.done[d.date]);
+      const plan = PL.planOf(set);
+      const all = plan.days.every((d) => plan.done[d.date]);
       if (all) setTimeout(() => confetti({ y: 0.5, count: 120 }), 150);
-      toast(all ? 'Alle Übungen geschafft – du bist bereit! 🎯' : 'Stark! Morgen geht es weiter.', 3000);
+      toast(all ? 'Alles geschafft – du bist bereit! 🎯' : 'Stark! Morgen geht es weiter.', 3000);
     }
-    if (S.demo) return;
+    if (S.demo || local) return;
     try { setStudy(await api('studyDay', { id: set.id, date, done })); } catch (e) { toast(e.message); }
   },
   async dayCheck() {

@@ -1214,3 +1214,6 @@ label.up input[type=file], label.up-row input[type=file] { position: absolute; i
   html.printing .lz-meta { color: #555; }
   @page { margin: 12mm; }
 }
+.day-focus small { font-weight: 500; font-size: 14px; color: var(--text-3); }
+.day-steps { margin: 0 0 12px; padding: 12px 14px 12px 34px; border-radius: 16px; background: var(--card-2); font-size: 15px; line-height: 1.5; }
+.day-steps li { margin: 3px 0; }
