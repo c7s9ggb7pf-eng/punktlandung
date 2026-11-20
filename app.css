@@ -1145,3 +1145,17 @@ html.scrolled body::after { opacity: 1; }
 .chat-input .send { flex: none; width: 46px; height: 46px; border: 0; border-radius: 15px; display: grid; place-items: center; color: #fff; background: var(--accent); }
 .chat-input .send:disabled { opacity: .5; }
 .chat-input .send .ico { width: 20px; height: 20px; }
+
+/* ---------- 1.9.1: eigene Karteikarten, Material ansehen ---------- */
+button.doc-name { border: 0; background: none; padding: 0; text-align: left; color: var(--text); cursor: pointer; }
+button.doc-name small { color: oklch(55% .14 var(--h)); }
+.card-form { display: grid; gap: 4px; margin-bottom: 6px; }
+.card-form textarea { resize: vertical; font-size: 15.5px; line-height: 1.4; }
+.own-cards { display: grid; gap: 6px; }
+.own-card { display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px 10px 12px; border-radius: 14px; background: var(--card-2); }
+.own-card > span { flex: 1; min-width: 0; }
+.own-card b { display: block; font-size: 14.5px; }
+.own-card small { display: block; color: var(--text-2); font-size: 13.5px; margin-top: 2px; }
+.own-card .x { border: 0; background: none; color: var(--text-3); padding: 4px; }
+.own-card .x .ico { width: 16px; height: 16px; }
+.doc-img { display: block; width: 100%; height: auto; margin: 6px 0 12px; border-radius: 14px; }

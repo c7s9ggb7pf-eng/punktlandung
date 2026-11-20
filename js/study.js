@@ -13,14 +13,25 @@ export function saveProgress(id, p) {
   try { localStorage.setItem('pl.study.' + id, JSON.stringify(p)); } catch { /* egal */ }
 }
 
+/** Eigene Karteikarten (ohne KI) – nur auf dem Handy, je Lernset. */
+export function ownCards(id) {
+  try { return JSON.parse(localStorage.getItem('pl.cards.' + id) || '[]'); } catch { return []; }
+}
+export function saveOwnCards(id, cards) {
+  try { localStorage.setItem('pl.cards.' + id, JSON.stringify(cards)); } catch { /* egal */ }
+}
+/** Alle Karten eines Sets: zuerst die der KI (falls vorhanden), dann die eigenen. */
+export const cardsOf = (s) => [...(s?.material?.cards || []), ...ownCards(s?.id)];
+
 function statusChip(s) {
   if (s.status === 'working') return '<span class="st-chip work"><span class="spin"></span>Wird erstellt</span>';
   if (s.status === 'error') return '<span class="st-chip bad">Fehler</span>';
-  if (s.status === 'ready') {
+  const n = cardsOf(s).length;
+  if (n) {
     const p = progress(s.id);
-    const n = s.material?.cards?.length || 0;
-    return `<span class="st-chip ok">${n ? `${Math.min(p.known.length, n)}/${n} Karten` : 'Bereit'}</span>`;
+    return `<span class="st-chip ok">${Math.min(p.known.length, n)}/${n} Karten</span>`;
   }
+  if (s.status === 'ready') return '<span class="st-chip ok">Bereit</span>';
   return `<span class="st-chip">${count(s.docs.length, 'Dokument', 'Dokumente')}</span>`;
 }
 
@@ -55,7 +66,7 @@ export function studySection(S, blocks) {
       <button class="hw-add" data-act="studyNew" aria-label="Neues Lernset">${icon('plus')}</button></div>
     ${st?.loading && !sets.length ? '<div class="study-empty"><span class="spin"></span></div>' : ''}
     ${cards}${sugg}
-    ${!sets.length && !exams.length && !st?.loading ? '<button class="study-empty" data-act="studyNew"><b>Lade Arbeitsblätter, Hefteinträge oder PDFs hoch</b><span>Die KI macht daraus eine Zusammenfassung, Karteikarten, ein Quiz und Klausurfragen – und bewertet deine Antworten.</span></button>' : ''}
+    ${!sets.length && !exams.length && !st?.loading ? `<button class="study-empty" data-act="studyNew"><b>Lade Arbeitsblätter, Hefteinträge oder PDFs hoch</b><span>${st?.ai ? 'Die KI macht daraus eine Zusammenfassung, Karteikarten, ein Quiz und Klausurfragen – und bewertet deine Antworten.' : 'Schau dir dein Material an, schreib dir Karteikarten dazu und lern sie mit „Gewusst / Nochmal“.'}</span></button>` : ''}
   </section>`;
 }
 
@@ -84,33 +95,38 @@ export function setSheet(S, s, V) {
   if (!s) return '<div class="sheet-body"><p class="muted">Lernset nicht gefunden.</p><button class="btn soft" data-act="closeSheet">Schließen</button></div>';
   const ai = S.study?.ai;
   const m = s.material;
-  const docs = s.docs.map((d) => `<div class="doc"><span class="doc-ico">${docIcon(d)}</span><span class="doc-name">${esc(d.name)}<small>${(d.size / 1024 / 1024).toFixed(d.size > 1048576 ? 1 : 2).replace('.', ',')} MB</small></span>
+  const docs = s.docs.map((d) => `<div class="doc"><span class="doc-ico">${docIcon(d)}</span><button class="doc-name" data-act="docView" data-v="${esc(d.id)}">${esc(d.name)}<small>${(d.size / 1024 / 1024).toFixed(d.size > 1048576 ? 1 : 2).replace('.', ',')} MB · ansehen</small></button>
       <button class="x" data-act="studyDocDel" data-v="${esc(d.id)}" aria-label="Entfernen">${icon('x')}</button></div>`).join('');
   const upBusy = S.busy.upload;
-  const gen = s.status === 'working'
-    ? `<div class="gen-wait"><span class="spin"></span><span><b>Die KI liest dein Material …</b><small>Das dauert meist 1–2 Minuten. Du kannst das Blatt schließen – es läuft weiter.</small></span></div>`
-    : !ai ? '<p class="muted small-note">Die KI ist auf dem Server noch nicht eingerichtet. Deine Dokumente kannst du schon hochladen.</p>'
+  const gen = !ai ? ''
+    : s.status === 'working'
+      ? `<div class="gen-wait"><span class="spin"></span><span><b>Die KI liest dein Material …</b><small>Das dauert meist 1–2 Minuten. Du kannst das Blatt schließen – es läuft weiter.</small></span></div>`
       : `<button class="btn ${m ? 'soft' : ''}" data-act="studyGen" ${s.docs.length ? '' : 'disabled'}>${icon('spark')}${m ? 'Mit neuem Material neu erstellen' : 'Lernhilfe mit KI erstellen'}</button>`;
-  const err = s.status === 'error' && s.error ? `<p class="gen-err">${esc(s.error)}</p>` : '';
+  const err = ai && s.status === 'error' && s.error ? `<p class="gen-err">${esc(s.error)}</p>` : '';
+  const showModes = s.status !== 'working';
   return `<div class="sheet-body study-sheet" style="--h:${hue(s.su, s.subject)}">
     <div class="sheet-kicker">${esc(short(s.subject))}${s.examDate ? ' · ' + esc(dateLong(s.examDate)) + ' · ' + esc(examWhen(s.examDate)) : ''}</div>
     <h3 class="sheet-title"><i class="subj-dot"></i>${esc(m?.topic || s.title || 'Lernset')}</h3>
-    ${m && s.status !== 'working' ? modes(S, s, V) : ''}
-    ${m && s.status !== 'working' ? `<button class="btn soft" data-act="chatOpen" data-set="${esc(s.id)}">${icon('spark')}Fragen zum Material stellen</button>` : ''}
+    ${showModes ? modes(S, s, V) : ''}
+    ${ai && m && showModes ? `<button class="btn soft" data-act="chatOpen" data-set="${esc(s.id)}">${icon('spark')}Fragen zum Material stellen</button>` : ''}
     <h4 class="group-label">Material · ${s.docs.length}</h4>
     <div class="docs">${docs || '<p class="muted">Noch nichts hochgeladen. Fotografier Arbeitsblätter und Hefteinträge oder lade PDFs hoch.</p>'}</div>
     <button class="btn soft" data-act="studyUpload" ${upBusy ? 'disabled' : ''}>${upBusy ? `<span class="spin"></span>${esc(upBusy)}` : `${icon('plus')}Fotos oder PDF hinzufügen`}</button>
     ${gen}${err}
-    <p class="fine">Dein Material wird auf dem Punktlandung-Server gespeichert und zum Erstellen an die KI (Claude von Anthropic) geschickt. Lösch das Lernset, wenn du es nicht mehr brauchst.</p>
+    <p class="fine">Dein Material wird auf dem Punktlandung-Server gespeichert${ai ? ' und zum Erstellen an die KI (Claude von Anthropic) geschickt' : ''}; deine eigenen Karteikarten bleiben auf dem Handy. Lösch das Lernset, wenn du es nicht mehr brauchst.</p>
     <button class="btn link" data-act="studyDel" data-v="${esc(s.id)}">${S._studyDel === s.id ? 'Wirklich löschen? Nochmal tippen' : 'Lernset löschen'}</button>
   </div>`;
 }
 
 function modes(S, s, V) {
   const L = S.learn;
-  const tabs = [['over', 'Überblick'], ['cards', 'Karten'], ['quiz', 'Quiz'], ['exam', 'Prüfung']];
-  const body = L.mode === 'cards' ? cardsMode(s, L) : L.mode === 'quiz' ? quizMode(s, L) : L.mode === 'exam' ? examMode(S, s, L) : overview(s.material);
-  return `<div class="seg small learn-seg">${tabs.map(([k, l]) => `<button class="${L.mode === k ? 'on' : ''}" data-act="learnMode" data-v="${k}">${l}</button>`).join('')}</div>
+  const m = s.material;
+  const tabs = m
+    ? [['over', 'Überblick'], ['cards', 'Karten'], ['quiz', 'Quiz'], ['exam', 'Prüfung'], ['edit', 'Eigene']]
+    : [['cards', 'Karten lernen'], ['edit', 'Karten schreiben']];
+  const mode = tabs.some(([k]) => k === L.mode) ? L.mode : tabs[0][0];
+  const body = mode === 'edit' ? editMode(s, L) : mode === 'cards' ? cardsMode(s, L) : mode === 'quiz' ? quizMode(s, L) : mode === 'exam' ? examMode(S, s, L) : overview(m);
+  return `<div class="seg small learn-seg">${tabs.map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" data-act="learnMode" data-v="${k}">${l}</button>`).join('')}</div>
     <div class="learn">${body}</div>`;
 }
 
@@ -123,18 +139,22 @@ function overview(m) {
 
 /** Reihenfolge der Karten: zuerst die noch nicht gewussten. */
 export function cardOrder(s, onlyOpen) {
-  const n = s.material?.cards?.length || 0;
+  const n = cardsOf(s).length;
   const known = new Set(progress(s.id).known);
   const all = Array.from({ length: n }, (_, i) => i);
   return onlyOpen ? all.filter((i) => !known.has(i)) : all;
 }
 
 function cardsMode(s, L) {
-  const cards = s.material.cards || [];
+  const cards = cardsOf(s);
   const p = progress(s.id);
+  if (!cards.length) {
+    return `<div class="learn-done"><b>Noch keine Karten</b><span>Schreib dir Karten zu deinem Material – Frage vorne, Antwort hinten.</span>
+      <button class="btn" data-act="learnMode" data-v="edit">${icon('plus')}Erste Karte schreiben</button></div>`;
+  }
   const order = cardOrder(s, L.onlyOpen);
   if (!order.length) {
-    return `<div class="learn-done"><b>🎉 Alle ${cards.length} Karten gewusst!</b><span>Stark. Mach zur Sicherheit noch das Quiz.</span>
+    return `<div class="learn-done"><b>🎉 Alle ${cards.length} Karten gewusst!</b><span>Stark.${s.material?.quiz?.length ? ' Mach zur Sicherheit noch das Quiz.' : ' Üb sie kurz vor der Klausur noch einmal.'}</span>
       <button class="btn soft" data-act="cardsReset">Von vorn üben</button></div>`;
   }
   const pos = Math.min(L.ci, order.length - 1);
@@ -149,6 +169,18 @@ function cardsMode(s, L) {
     ${L.flip ? `<div class="card-btns"><button class="btn soft" data-act="cardAgain">Nochmal</button><button class="btn" data-act="cardKnown">${icon('check')}Gewusst</button></div>`
       : '<div class="card-btns"><button class="btn soft" data-act="cardFlip">Antwort zeigen</button></div>'}
     <label class="row only-open"><span class="label">Nur Karten, die ich noch nicht kann</span><input type="checkbox" class="switch" data-act="cardsOnlyOpen" ${L.onlyOpen ? 'checked' : ''}></label>`;
+}
+
+function editMode(s, L) {
+  const own = ownCards(s.id);
+  const offset = s.material?.cards?.length || 0;
+  return `<form class="card-form" data-submit="cardAdd">
+      <label class="field"><span>Vorderseite (Frage oder Begriff)</span><textarea class="input" name="front" rows="2" maxlength="300" required placeholder="z. B. Was ist Outsourcing?"></textarea></label>
+      <label class="field"><span>Rückseite (Antwort)</span><textarea class="input" name="back" rows="3" maxlength="600" required placeholder="z. B. Verlagerung von Arbeit an andere Firmen oder ins Ausland"></textarea></label>
+      <button class="btn" type="submit">${icon('plus')}Karte speichern</button>
+    </form>
+    ${own.length ? `<h4 class="group-label">Deine Karten · ${own.length}</h4><div class="own-cards">${own.map((c, i) => `<div class="own-card"><span><b>${esc(c.front)}</b><small>${esc(c.back)}</small></span>
+      <button class="x" data-act="cardDel" data-v="${offset + i}" aria-label="Karte löschen">${icon('x')}</button></div>`).join('')}</div>` : ''}`;
 }
 
 function quizMode(s, L) {
@@ -231,8 +263,8 @@ export async function prepareFile(file) {
 export function demoStudy(blocks) {
   const ex = blocks.find((b) => b.st === 'exam');
   return {
-    ai: true,
-    sets: [{
+    ai: false,
+    sets: [{ id: 'demo2', subject: 'Deutsch', su: 'D', title: 'Lyrik der Romantik', examDate: addDays(today(), 12), status: 'new', error: null, docs: [{ id: 'd3', name: 'Gedichtanalyse.jpg', mime: 'image/jpeg', size: 380000 }], material: null }, {
       id: 'demo1', subject: 'Englisch LK', su: 'E', title: 'Globalisation', examDate: addDays(today(), 7), status: 'ready', error: null,
       docs: [{ id: 'd1', name: 'Arbeitsblatt Globalisation.jpg', mime: 'image/jpeg', size: 412000 }, { id: 'd2', name: 'Hefteintrag.pdf', mime: 'application/pdf', size: 1300000 }],
       material: {

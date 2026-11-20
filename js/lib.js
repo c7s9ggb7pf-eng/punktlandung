@@ -1,7 +1,7 @@
 // Punktlandung – Grundlagen: Speicher, Server-Anbindung, Mitteilungen, Zeit.
 
 export const API = 'https://ahgjcjkbkvkyedztyory.supabase.co/functions/v1/punktlandung';
-export const VERSION = '1.9.0';
+export const VERSION = '1.9.1';
 
 // ---------- Speicher (lokal auf dem Gerät) ----------
 const read = (k, fb) => {

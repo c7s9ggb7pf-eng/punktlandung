@@ -408,7 +408,7 @@ function refreshSetSheet() {
 }
 function setStudy(r) {
   S.study = { ai: !!r.ai, sets: r.sets || [], loading: false };
-  if (S.screen === 'main' && S.tab === 'aufgaben' && !document.querySelector('.sheet')) render();
+  if (S.screen === 'main' && !document.querySelector('.sheet')) render();
   refreshSetSheet();
   pollStudy();
 }
@@ -608,7 +608,7 @@ const actions = {
   },
   tab(el) {
     S.tab = el.dataset.v;
-    if (S.tab === 'aufgaben') loadStudy();
+    loadStudy(); // auch, um zu wissen, ob die KI eingerichtet ist (Chat-Knopf)
     if (S.tab === 'noten') ensureSubjects();
     haptic(5);
     render();
@@ -778,7 +778,8 @@ const actions = {
     S._studyOpen = el.dataset.v;
     S._studyDel = null;
     learnReset();
-    S.learn.mode = 'over';
+    const set0 = curSet();
+    S.learn.mode = set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
     openSheet(ST.setSheet(S, curSet(), V), { onClose: () => { S._studyOpen = null; if (S.tab === 'aufgaben') render(); } });
   },
   studyUpload() {
@@ -833,6 +834,52 @@ const actions = {
     closeSheet();
     render();
   },
+  // ---------- 1.9.1: eigene Karteikarten + Material ansehen ----------
+  cardAdd(form) {
+    const set = curSet();
+    const fd = new FormData(form);
+    const front = String(fd.get('front') || '').trim();
+    const back = String(fd.get('back') || '').trim();
+    if (!set || !front || !back) return toast('Bitte Vorder- und Rückseite ausfüllen.');
+    const own = ST.ownCards(set.id);
+    own.push({ front, back });
+    ST.saveOwnCards(set.id, own);
+    haptic(10);
+    toast(`Karte gespeichert – jetzt ${ST.cardsOf(set).length} Karten.`);
+    refreshSetSheet();
+    setTimeout(() => document.querySelector('.card-form textarea[name="front"]')?.focus(), 50);
+  },
+  cardDel(el) {
+    const set = curSet();
+    const k = Number(el.dataset.v);
+    const offset = set.material?.cards?.length || 0;
+    const own = ST.ownCards(set.id);
+    own.splice(k - offset, 1);
+    ST.saveOwnCards(set.id, own);
+    const p = ST.progress(set.id);
+    p.known = p.known.filter((i) => i !== k).map((i) => (i > k ? i - 1 : i));
+    ST.saveProgress(set.id, p);
+    refreshSetSheet();
+  },
+  async docView(el) {
+    const set = curSet();
+    const d = set?.docs.find((x) => x.id === el.dataset.v);
+    if (!d) return;
+    if (S.demo) return toast('Vorschau – Dokumente gibt es nur mit echtem Konto.');
+    try {
+      const r = await api('studyDoc', { id: d.id }, { timeout: 60000 });
+      const bin = atob(r.data);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([u8], { type: r.mime }));
+      if (/^image\//.test(r.mime)) {
+        openSheet(`<div class="sheet-body"><h3 class="sheet-title">${V.escHtml(r.name)}</h3><img class="doc-img" src="${url}" alt=""><button class="btn soft" data-act="studyBack">Zurück zum Lernset</button></div>`);
+      } else {
+        window.open(url, '_blank');
+      }
+    } catch (e) { toast(e.message); }
+  },
+  studyBack() { if (S._studyOpen) actions.studyOpen({ dataset: { v: S._studyOpen } }); else closeSheet(); },
   learnMode(el) {
     learnReset();
     S.learn.mode = el.dataset.v;
@@ -850,7 +897,7 @@ const actions = {
     S.learn.flip = false;
     if (!S.learn.onlyOpen) S.learn.ci = pos + 1 >= order.length ? 0 : pos + 1;
     else if (pos >= order.length - 1) S.learn.ci = 0;
-    if (p.known.length >= (set.material?.cards?.length || 0)) confetti({ y: 0.5, count: 80 });
+    if (p.known.length >= ST.cardsOf(set).length) confetti({ y: 0.5, count: 80 });
     haptic(10);
     refreshSetSheet();
   },
