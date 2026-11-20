@@ -96,6 +96,7 @@ export function setSheet(S, s, V) {
     <div class="sheet-kicker">${esc(short(s.subject))}${s.examDate ? ' · ' + esc(dateLong(s.examDate)) + ' · ' + esc(examWhen(s.examDate)) : ''}</div>
     <h3 class="sheet-title"><i class="subj-dot"></i>${esc(m?.topic || s.title || 'Lernset')}</h3>
     ${m && s.status !== 'working' ? modes(S, s, V) : ''}
+    ${m && s.status !== 'working' ? `<button class="btn soft" data-act="chatOpen" data-set="${esc(s.id)}">${icon('spark')}Fragen zum Material stellen</button>` : ''}
     <h4 class="group-label">Material · ${s.docs.length}</h4>
     <div class="docs">${docs || '<p class="muted">Noch nichts hochgeladen. Fotografier Arbeitsblätter und Hefteinträge oder lade PDFs hoch.</p>'}</div>
     <button class="btn soft" data-act="studyUpload" ${upBusy ? 'disabled' : ''}>${upBusy ? `<span class="spin"></span>${esc(upBusy)}` : `${icon('plus')}Fotos oder PDF hinzufügen`}</button>

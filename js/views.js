@@ -2,6 +2,7 @@
 import { esc, icon, hue, flap } from './ui.js';
 import { store } from './lib.js';
 import { studySection } from './study.js';
+import { chatFab } from './chat.js';
 import {
   today, addDays, weekday, nowMin, hhmm, daysFromToday, dayWord, dateLong, ago, until, fmtPeriod, parseDay,
   WD, WD_LONG, isIOS, isStandalone, pushSupported, permission, VERSION,
@@ -1172,6 +1173,7 @@ export function main(S) {
   const content = tab === 'aufgaben' ? tasks(S) : tab === 'ich' || tab === 'verlauf' ? me(S) : tab === 'noten' ? noten(S) : plan(S);
   const tabs = [['plan', 'plan', 'Plan'], ['noten', 'grade', 'Noten'], ['aufgaben', 'tasks', 'Aufgaben'], ['ich', 'user', 'Ich']];
   return `<main class="screen screen-${tab}">${content}</main>
+    ${S.demo || S.state ? chatFab() : ''}
     <nav class="tabbar" aria-label="Bereiche">${tabs.map(([k, ic, label]) => `
       <button class="tab ${tab === k ? 'on' : ''}" data-act="tab" data-v="${k}" aria-current="${tab === k ? 'page' : 'false'}" aria-label="${label}">
         ${icon(ic)}<span>${label}</span>${k === 'aufgaben' && dueSoon && tab !== 'aufgaben' ? `<em class="badge">${dueSoon}</em>` : ''}

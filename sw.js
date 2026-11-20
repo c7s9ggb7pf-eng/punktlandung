@@ -1,5 +1,5 @@
 // Punktlandung – Service Worker: Offline-Start und Mitteilungen.
-const CACHE = 'punktlandung-v20';
+const CACHE = 'punktlandung-v21';
 const SHELL = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const SHELL = [
   './js/demo.js',
   './js/grades.js',
   './js/study.js',
+  './js/chat.js',
   './fonts/bricolagegrotesque.woff2',
   './fonts/geist.woff2',
   './fonts/geistmono.woff2',

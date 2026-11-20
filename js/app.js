@@ -9,6 +9,7 @@ import { toast, confetti, openSheet, updateSheet, closeSheet, haptic, runFlaps, 
 import { demoState, demoGrades } from './demo.js';
 import * as G from './grades.js';
 import * as ST from './study.js';
+import * as CH from './chat.js';
 
 const root = document.getElementById('app');
 
@@ -23,6 +24,7 @@ const S = {
   grades: store.grades || G.empty(),
   add: { sid: null, hj: 0, kind: 'k' },
   study: null, // { ai, sets, loading }
+  chat: { msgs: [], setId: null, title: '', grades: false, busy: false, draft: '' },
   learn: { mode: 'over', ci: 0, flip: false, onlyOpen: false, qi: 0, pick: null, score: 0, ei: null },
   ob: { step: 'welcome', query: '', results: [], tooMany: false, searching: false, searchError: '', school: null, mode: 'password', busy: false, error: '', draft: {}, nameGuess: '' },
 };
@@ -358,6 +360,48 @@ function buildIcs() {
 }
 
 // ---------- 1.8: Lernen ----------
+function chatScroll() {
+  requestAnimationFrame(() => {
+    const sh = document.querySelector('.sheet');
+    if (sh) sh.scrollTop = sh.scrollHeight;
+  });
+}
+async function chatSendText(q) {
+  const C = S.chat;
+  if (C.busy || !q) return;
+  C.msgs.push({ role: 'user', content: q });
+  C.busy = true;
+  C.draft = '';
+  CH.saveChat(C.setId, C.msgs);
+  updateSheet(CH.chatSheet(S));
+  chatScroll();
+  let answer;
+  if (S.demo) {
+    await new Promise((r) => setTimeout(r, 700));
+    answer = { text: 'Das ist die **Vorschau** – mit echtem Konto antworte ich hier richtig.\n- Ich kenne deinen Stundenplan, deine Hausaufgaben und Klausuren\n- Noten nur, wenn du sie oben mitschickst' };
+  } else {
+    try {
+      answer = await api('chat', {
+        messages: C.msgs.map((m) => ({ role: m.role, content: m.content })),
+        setId: C.setId,
+        ...(C.grades && !C.setId ? { grades: CH.gradesText(S.grades) } : {}),
+      }, { timeout: 120000 });
+    } catch (e) {
+      answer = null;
+      toast(e.message, 4000);
+      C.msgs.pop();
+      C.draft = q;
+    }
+  }
+  if (answer) C.msgs.push({ role: 'assistant', content: answer.text, web: !!answer.web });
+  C.busy = false;
+  CH.saveChat(C.setId, C.msgs);
+  if (document.querySelector('.chat-sheet')) {
+    updateSheet(CH.chatSheet(S));
+    chatScroll();
+  }
+}
+
 const curSet = () => S.study?.sets?.find((x) => x.id === S._studyOpen);
 function refreshSetSheet() {
   if (S._studyOpen && document.querySelector('.study-sheet')) updateSheet(ST.setSheet(S, curSet(), V));
@@ -678,6 +722,27 @@ const actions = {
     } else closeSheet();
     render();
   },
+  // ---------- 1.9: Chat ----------
+  chatOpen(el) {
+    const setId = el?.dataset.set || null;
+    const set = setId ? S.study?.sets?.find((x) => x.id === setId) : null;
+    S.chat = { ...S.chat, setId, title: set ? `Fragen zu ${set.material?.topic || set.subject}` : '', msgs: CH.loadChat(setId), busy: false, draft: '' };
+    if (!S.study && !S.demo) loadStudy();
+    openSheet(CH.chatSheet(S), { onClose: () => { S.chat.busy = false; } });
+    chatScroll();
+  },
+  chatAsk(el) { chatSendText(el.dataset.v); },
+  chatSend(form) {
+    const q = String(new FormData(form).get('q') || '').trim();
+    if (q) chatSendText(q);
+  },
+  chatClear() {
+    S.chat.msgs = [];
+    CH.saveChat(S.chat.setId, []);
+    updateSheet(CH.chatSheet(S));
+  },
+  chatGrades(el) { S.chat.grades = el.checked; },
+
   // ---------- 1.8: Lernen für Klausuren ----------
   studyNew(el) {
     S.newSet = { subject: el?.dataset.subject || '', su: el?.dataset.su || '', title: '', examDate: el?.dataset.date || '' };
@@ -1285,6 +1350,11 @@ document.addEventListener('submit', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeSheet();
+  // Im Chat: Enter schickt, Umschalt+Enter macht eine neue Zeile.
+  if (e.key === 'Enter' && !e.shiftKey && e.target.matches?.('.chat-input textarea')) {
+    e.preventDefault();
+    e.target.form?.requestSubmit();
+  }
 });
 
 // ---------- Start ----------
