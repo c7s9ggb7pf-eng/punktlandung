@@ -1,6 +1,7 @@
 // Punktlandung – Lernen für Klausuren: Lernsets, Dokumente, KI-Lernhilfe (Überblick, Karten, Quiz, Prüfung).
 import { esc, icon, hue } from './ui.js';
 import { today, daysFromToday, dateLong, addDays } from './lib.js';
+import * as PL from './plan.js';
 
 const short = (s) => String(s || '').replace(/\s+(LK|GK|ZK)$/i, '');
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -24,7 +25,8 @@ export function saveOwnCards(id, cards) {
 export const cardsOf = (s) => [...(s?.material?.cards || []), ...ownCards(s?.id)];
 
 function statusChip(s) {
-  if (s.status === 'working') return '<span class="st-chip work"><span class="spin"></span>Wird erstellt</span>';
+  if (s.status === 'working' || s.prepStatus === 'working') return '<span class="st-chip work"><span class="spin"></span>Wird erstellt</span>';
+  if (PL.todayOpen(s)) return '<span class="st-chip today">Übung heute</span>';
   if (s.status === 'error') return '<span class="st-chip bad">Fehler</span>';
   const n = cardsOf(s).length;
   if (n) {
@@ -108,6 +110,8 @@ export function setSheet(S, s, V) {
     <div class="sheet-kicker">${esc(short(s.subject))}${s.examDate ? ' · ' + esc(dateLong(s.examDate)) + ' · ' + esc(examWhen(s.examDate)) : ''}</div>
     <h3 class="sheet-title"><i class="subj-dot"></i>${esc(m?.topic || s.title || 'Lernset')}</h3>
     ${showModes ? modes(S, s, V) : ''}
+    ${PL.taskBlock(S, s)}
+    ${PL.prepBlock(S, s)}
     ${ai && m && showModes ? `<button class="btn soft" data-act="chatOpen" data-set="${esc(s.id)}">${icon('spark')}Fragen zum Material stellen</button>` : ''}
     <h4 class="group-label">Material · ${s.docs.length}</h4>
     <div class="docs">${docs || '<p class="muted">Noch nichts hochgeladen. Fotografier Arbeitsblätter und Hefteinträge oder lade PDFs hoch.</p>'}</div>
@@ -116,7 +120,7 @@ export function setSheet(S, s, V) {
       <label class="btn soft up">${icon('plus')}PDF / Datei<input type="file" accept="application/pdf,.pdf,text/plain,.txt" multiple data-file="study" aria-label="PDF oder Datei hinzufügen"></label>
     </div>`}
     ${gen}${err}
-    <p class="fine">Dein Material wird auf dem Punktlandung-Server gespeichert${ai ? ' und zum Erstellen an die KI (Claude von Anthropic) geschickt' : ''}; deine eigenen Karteikarten bleiben auf dem Handy. Lösch das Lernset, wenn du es nicht mehr brauchst.</p>
+    <p class="fine">Dein Material wird auf dem Punktlandung-Server gespeichert${ai ? (S.study?.aiName === 'gemini' ? ' und zum Erstellen an die kostenlose KI Gemini von Google geschickt (im Gratis-Paket darf Google die Inhalte zur Verbesserung seiner Dienste nutzen – lad also nichts Privates hoch)' : ' und zum Erstellen an die KI (Claude von Anthropic) geschickt') : ''}; deine eigenen Karteikarten bleiben auf dem Handy. Lösch das Lernset, wenn du es nicht mehr brauchst.</p>
     <button class="btn link" data-act="studyDel" data-v="${esc(s.id)}">${S._studyDel === s.id ? 'Wirklich löschen? Nochmal tippen' : 'Lernset löschen'}</button>
   </div>`;
 }
@@ -124,11 +128,14 @@ export function setSheet(S, s, V) {
 function modes(S, s, V) {
   const L = S.learn;
   const m = s.material;
-  const tabs = m
-    ? [['over', 'Überblick'], ['cards', 'Karten'], ['quiz', 'Quiz'], ['exam', 'Prüfung'], ['edit', 'Eigene']]
-    : [['cards', 'Karten lernen'], ['edit', 'Karten schreiben']];
+  const tabs = [
+    ...(s.plan ? [['today', 'Heute'], ['sheet', 'Lernzettel']] : []),
+    ...(m ? [['over', 'Überblick'], ['cards', 'Karten'], ['quiz', 'Quiz'], ['exam', 'Prüfung'], ['edit', 'Eigene']]
+      : [['cards', s.plan ? 'Karten' : 'Karten lernen'], ['edit', s.plan ? 'Eigene' : 'Karten schreiben']]),
+  ];
   const mode = tabs.some(([k]) => k === L.mode) ? L.mode : tabs[0][0];
-  const body = mode === 'edit' ? editMode(s, L) : mode === 'cards' ? cardsMode(s, L) : mode === 'quiz' ? quizMode(s, L) : mode === 'exam' ? examMode(S, s, L) : overview(m);
+  const body = mode === 'today' ? PL.todayView(S, s, L) : mode === 'sheet' ? PL.sheetView(s)
+    : mode === 'edit' ? editMode(s, L) : mode === 'cards' ? cardsMode(s, L) : mode === 'quiz' ? quizMode(s, L) : mode === 'exam' ? examMode(S, s, L) : overview(m);
   return `<div class="seg small learn-seg">${tabs.map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" data-act="learnMode" data-v="${k}">${l}</button>`).join('')}</div>
     <div class="learn">${body}</div>`;
 }
@@ -267,7 +274,7 @@ export function demoStudy(blocks) {
   const ex = blocks.find((b) => b.st === 'exam');
   return {
     ai: false,
-    sets: [{ id: 'demo2', subject: 'Deutsch', su: 'D', title: 'Lyrik der Romantik', examDate: addDays(today(), 12), status: 'new', error: null, docs: [{ id: 'd3', name: 'Gedichtanalyse.jpg', mime: 'image/jpeg', size: 380000 }], material: null }, {
+    sets: [{ id: 'demo2', subject: 'Deutsch', su: 'D', title: 'Lyrik der Romantik', examDate: addDays(today(), 3), status: 'new', error: null, docs: [{ id: 'd3', name: 'Gedichtanalyse.jpg', mime: 'image/jpeg', size: 380000 }], material: null, ...PL.demoPlan() }, {
       id: 'demo1', subject: 'Englisch LK', su: 'E', title: 'Globalisation', examDate: addDays(today(), 7), status: 'ready', error: null,
       docs: [{ id: 'd1', name: 'Arbeitsblatt Globalisation.jpg', mime: 'image/jpeg', size: 412000 }, { id: 'd2', name: 'Hefteintrag.pdf', mime: 'application/pdf', size: 1300000 }],
       material: {

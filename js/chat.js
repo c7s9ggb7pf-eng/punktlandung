@@ -74,7 +74,7 @@ export function chatSheet(S) {
       ${msgs.length ? '<button class="mini" data-act="chatClear">Neu</button>' : ''}</div>
     ${C.setId ? '' : `<label class="row chat-opt"><span class="label">Noten mitschicken<small>Nur für diese Fragen – sonst bleiben sie auf dem Handy</small></span><input type="checkbox" class="switch" data-act="chatGrades" ${C.grades ? 'checked' : ''}></label>`}
     <div class="chat-log">${body}${C.busy ? '<div class="msg assistant typing"><i></i><i></i><i></i></div>' : ''}</div>
-    ${ai ? '' : '<p class="muted small-note">Die KI ist auf dem Server noch nicht eingerichtet (API-Schlüssel fehlt).</p>'}
+    ${ai ? (S.study?.aiName === 'gemini' ? '<p class="muted small-note">Kostenlose KI: Gemini von Google. Google darf die Fragen im Gratis-Paket zur Verbesserung nutzen – schreib nichts Privates hinein.</p>' : '') : '<p class="muted small-note">Die KI ist auf dem Server noch nicht eingerichtet (API-Schlüssel fehlt).</p>'}
     <form class="chat-input" data-submit="chatSend">
       <textarea class="input" name="q" rows="1" maxlength="4000" placeholder="Deine Frage …" ${C.busy ? 'disabled' : ''}>${esc(C.draft || '')}</textarea>
       <button class="send" type="submit" aria-label="Senden" ${C.busy ? 'disabled' : ''}>${icon('send')}</button>

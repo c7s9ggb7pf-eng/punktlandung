@@ -10,6 +10,7 @@ import { demoState, demoGrades } from './demo.js';
 import * as G from './grades.js';
 import * as ST from './study.js';
 import * as CH from './chat.js';
+import * as PL from './plan.js';
 
 const root = document.getElementById('app');
 
@@ -452,12 +453,33 @@ document.addEventListener('change', (e) => {
   else if (el.dataset.file === 'restore') restoreFrom(files[0]);
 });
 
+const confirmedNoTask = new Set();
+let taskTimer = null;
+/** Aufgabenstellung speichern (sofort bei Chip, verzögert beim Tippen). */
+async function saveTask(v, delay = 0) {
+  const set = curSet();
+  if (!set) return;
+  S._taskDraft = { ...(S._taskDraft || {}), [set.id]: v };
+  clearTimeout(taskTimer);
+  if (!delay) refreshSetSheet();
+  taskTimer = setTimeout(async () => {
+    set.task = v;
+    if (S.demo) return;
+    try { setStudy(await api('studyTask', { id: set.id, task: v })); } catch (e) { toast(e.message); }
+  }, delay);
+}
+
 const curSet = () => S.study?.sets?.find((x) => x.id === S._studyOpen);
 function refreshSetSheet() {
   if (S._studyOpen && document.querySelector('.study-sheet')) updateSheet(ST.setSheet(S, curSet(), V));
 }
 function setStudy(r) {
-  S.study = { ai: !!r.ai, sets: r.sets || [], loading: false };
+  S.study = { ai: !!r.ai, aiName: r.aiName || null, sets: r.sets || [], loading: false };
+  if (S._openStudy && S.study.sets.some((x) => x.id === S._openStudy)) {
+    const id = S._openStudy;
+    S._openStudy = null;
+    setTimeout(() => { actions.studyOpen({ dataset: { v: id } }); S.learn.mode = 'today'; refreshSetSheet(); }, 50);
+  }
   if (S.screen === 'main' && !document.querySelector('.sheet')) render();
   refreshSetSheet();
   pollStudy();
@@ -472,20 +494,29 @@ async function loadStudy() {
 }
 let studyTimer = null;
 function pollStudy() {
-  const working = S.study?.sets?.some((x) => x.status === 'working');
+  const working = S.study?.sets?.some((x) => x.status === 'working' || x.prepStatus === 'working');
   if (!working || studyTimer || S.demo) return;
   studyTimer = setTimeout(async () => {
     studyTimer = null;
     const was = new Set(S.study.sets.filter((x) => x.status === 'working').map((x) => x.id));
+    const wasPrep = new Set(S.study.sets.filter((x) => x.prepStatus === 'working').map((x) => x.id));
     await loadStudy();
     for (const x of S.study.sets) {
-      if (!was.has(x.id) || x.status === 'working') continue;
-      haptic(15);
-      toast(x.status === 'ready' ? `Lernhilfe für ${x.material?.topic || x.subject} ist fertig 🎉` : x.error || 'Lernhilfe ging schief.', 3800);
+      if (was.has(x.id) && x.status !== 'working') {
+        haptic(15);
+        toast(x.status === 'ready' ? `Lernhilfe für ${x.material?.topic || x.subject} ist fertig 🎉` : x.error || 'Lernhilfe ging schief.', 3800);
+      }
+      if (wasPrep.has(x.id) && x.prepStatus !== 'working') {
+        haptic(15);
+        if (x.prepStatus === 'ready') {
+          toast(`Lernzettel und ${x.plan?.days?.length || ''} Tagesübungen sind fertig 🎉`, 3800);
+          if (S._studyOpen === x.id) { S.learn.mode = 'today'; refreshSetSheet(); }
+        } else toast(x.prepError || 'Lernplan ging schief.', 4000);
+      }
     }
   }, 4000);
 }
-const learnReset = () => { S.learn = { mode: S.learn.mode || 'over', ci: 0, flip: false, onlyOpen: false, qi: 0, pick: null, score: 0, ei: null }; };
+const learnReset = () => { S.learn = { mode: S.learn.mode || 'over', ci: 0, flip: false, onlyOpen: false, qi: 0, pick: null, score: 0, ei: null, pd: null }; };
 
 function saveGrades() {
   if (!S.demo) store.grades = S.grades;
@@ -844,7 +875,7 @@ const actions = {
     S._studyDel = null;
     learnReset();
     const set0 = curSet();
-    S.learn.mode = set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
+    S.learn.mode = set0?.plan ? 'today' : set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
     openSheet(ST.setSheet(S, curSet(), V), { onClose: () => { S._studyOpen = null; if (S.tab === 'aufgaben') render(); } });
   },
   async studyDocDel(el) {
@@ -871,6 +902,67 @@ const actions = {
     closeSheet();
     render();
   },
+  // ---------- 1.10: Aufgabenstellung, Lernzettel, Tagesübung ----------
+  studyTaskChip(el) { saveTask(el.dataset.v); },
+  async studyPrep() {
+    const set = curSet();
+    if (!set) return;
+    if (S.demo) return toast('Vorschau – die KI läuft nur mit echtem Konto.');
+    if (!set.task && !confirmedNoTask.has(set.id)) {
+      confirmedNoTask.add(set.id);
+      return toast('Tipp: Trag oben ein, was in der Klausur drankommt – dann passen Lernzettel und Übungen genau. Nochmal tippen, um ohne zu starten.', 5000);
+    }
+    try { setStudy(await api('studyPrep', { id: set.id }, { timeout: 30000 })); haptic(10); } catch (e) { toast(e.message, 4000); }
+  },
+  dayPick(el) { S.learn.pd = el.dataset.v; haptic(5); refreshSetSheet(); },
+  async dayDone(el) {
+    const set = curSet();
+    const date = el.dataset.v;
+    const done = el.dataset.done === '1';
+    set.plan.done = { ...(set.plan.done || {}), [date]: done };
+    refreshSetSheet();
+    if (done) {
+      haptic(15);
+      const all = set.plan.days.every((d) => set.plan.done[d.date]);
+      if (all) setTimeout(() => confetti({ y: 0.5, count: 120 }), 150);
+      toast(all ? 'Alle Übungen geschafft – du bist bereit! 🎯' : 'Stark! Morgen geht es weiter.', 3000);
+    }
+    if (S.demo) return;
+    try { setStudy(await api('studyDay', { id: set.id, date, done })); } catch (e) { toast(e.message); }
+  },
+  async dayCheck() {
+    const set = curSet();
+    const d = set?.plan?.days?.[PL.dayIndex(set.plan, S.learn.pd)];
+    const answer = (document.querySelector('.exam-input')?.value || '').trim();
+    if (!d || answer.length < 3) return toast('Schreib erst eine Antwort.');
+    const p = ST.progress(set.id);
+    p.dayAnswers = { ...(p.dayAnswers || {}), [d.date]: answer };
+    ST.saveProgress(set.id, p);
+    S.busy.check = true;
+    refreshSetSheet();
+    try {
+      const r = await api('studyDayCheck', { id: set.id, date: d.date, answer }, { timeout: 90000 });
+      const q = ST.progress(set.id);
+      q.dayResults = { ...(q.dayResults || {}), [d.date]: r };
+      ST.saveProgress(set.id, q);
+      if (r.points >= 13) setTimeout(() => confetti({ y: 0.5, count: 80 }), 150);
+    } catch (e) { toast(e.message, 4000); }
+    S.busy.check = false;
+    refreshSetSheet();
+  },
+  sheetPrint() {
+    const set = curSet();
+    if (!set?.sheet) return;
+    const box = document.createElement('div');
+    box.id = 'print-area';
+    box.innerHTML = PL.sheetHtml(set.sheet, set);
+    document.body.append(box);
+    document.documentElement.classList.add('printing');
+    const done = () => { box.remove(); document.documentElement.classList.remove('printing'); removeEventListener('afterprint', done); };
+    addEventListener('afterprint', done);
+    setTimeout(() => { window.print(); setTimeout(done, 1500); }, 50);
+  },
+
   // ---------- 1.9.1: eigene Karteikarten + Material ansehen ----------
   cardAdd(form) {
     const set = curSet();
@@ -1359,6 +1451,23 @@ const actions = {
 };
 
 const inputs = {
+  studyTaskIn(el) { saveTask(el.value.trim(), 900); },
+  dayAnswer(el) {
+    const set = curSet();
+    const d = set?.plan?.days?.[PL.dayIndex(set.plan, S.learn.pd)];
+    if (!d) return;
+    const p = ST.progress(set.id);
+    p.dayAnswers = { ...(p.dayAnswers || {}), [d.date]: el.value };
+    ST.saveProgress(set.id, p);
+  },
+  async remindHour(el) {
+    const set = curSet();
+    if (!set) return;
+    set.remindHour = Number(el.value);
+    toast(set.remindHour < 0 ? 'Erinnerung aus' : `Erinnerung jeden Übungstag um ${set.remindHour} Uhr`);
+    if (S.demo) return;
+    try { setStudy(await api('studyRemind', { id: set.id, hour: set.remindHour })); } catch (e) { toast(e.message); }
+  },
   studyTitle(el) { if (S.newSet) S.newSet.title = el.value; },
   studyDate(el) { if (S.newSet) S.newSet.examDate = el.value; },
   examAnswer(el) {
@@ -1429,6 +1538,7 @@ function openFromUrl(url) {
     else if (u.searchParams.has('noten')) S.tab = 'noten';
     else if (u.searchParams.has('hw') || u.searchParams.has('aufgaben')) S.tab = 'aufgaben';
     else if (u.searchParams.get('neu') === 'hw') { S.tab = 'aufgaben'; S._newHw = true; }
+    else if (u.searchParams.has('study')) { S.tab = 'aufgaben'; S._openStudy = u.searchParams.get('study'); }
   } catch { /* egal */ }
 }
 
@@ -1451,6 +1561,7 @@ async function boot() {
       if (e.data?.type === 'open') {
         openFromUrl(e.data.url);
         if (S.screen === 'main') render();
+        if (S._openStudy) loadStudy();
         loadState();
       }
     });

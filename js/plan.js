@@ -1,0 +1,124 @@
+// Punktlandung – Aufgabenstellung, Lernzettel und tägliche Übung bis zur Klausur (Ansichten).
+import { esc, icon } from './ui.js';
+import { today, dateLong, dayWord, addDays } from './lib.js';
+import { progress } from './study.js';
+
+export const TASK_CHIPS = [
+  'Sachtextanalyse + Erörterung', 'Gedichtinterpretation', 'Dramenszene analysieren', 'Quellenanalyse + Beurteilung',
+  'Karikatur / Statistik auswerten', 'Comment / Mediation', 'Rechen- und Anwendungsaufgaben', 'Versuch auswerten',
+];
+
+/** Feld „Was kommt dran?“ */
+export function taskBlock(S, s) {
+  const v = S._taskDraft?.[s.id] ?? s.task ?? '';
+  return `<div class="task-block">
+    <label class="field"><span>Was kommt in der Klausur dran? (Aufgabenstellung)</span>
+      <input class="input" data-in="studyTaskIn" value="${esc(v)}" maxlength="300" placeholder="z. B. Sachtextanalyse + Erörterung, Operatoren: analysieren, beurteilen"></label>
+    <div class="chips task-chips">${TASK_CHIPS.map((c) => `<button class="chip ${v === c ? 'on' : ''}" data-act="studyTaskChip" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+  </div>`;
+}
+
+/** Knopf / Status für Lernzettel + Tagesübungen (nur mit KI). */
+export function prepBlock(S, s) {
+  if (!S.study?.ai) return '';
+  if (s.prepStatus === 'working') {
+    return `<div class="gen-wait"><span class="spin"></span><span><b>Lernzettel und Tagesübungen werden erstellt …</b><small>Meist 1–2 Minuten. Du kannst das Blatt schließen.</small></span></div>`;
+  }
+  const err = s.prepStatus === 'error' && s.prepError ? `<p class="gen-err">${esc(s.prepError)}</p>` : '';
+  return `<button class="btn ${s.plan ? 'soft' : ''}" data-act="studyPrep" ${s.docs.length ? '' : 'disabled'}>${icon('spark')}${s.plan ? 'Lernzettel & Übungen neu erstellen' : 'Lernzettel & tägliche Übung erstellen'}</button>
+    ${s.docs.length ? '' : '<p class="muted small-note">Lade zuerst dein Material hoch.</p>'}${err}`;
+}
+
+/** Index des heutigen (oder nächsten offenen) Übungstags. */
+export function dayIndex(plan, pick) {
+  const days = plan?.days || [];
+  if (pick) { const i = days.findIndex((d) => d.date === pick); if (i >= 0) return i; }
+  const t = today();
+  const i = days.findIndex((d) => d.date === t);
+  if (i >= 0) return i;
+  if (days.length && t < days[0].date) return 0;
+  return days.length - 1;
+}
+
+export function todayOpen(s) {
+  const t = today();
+  return !!s.plan?.days?.some((d) => d.date === t) && !s.plan?.done?.[t];
+}
+
+/** Ansicht „Heute“: Übung des Tages. */
+export function todayView(S, s, L) {
+  const plan = s.plan;
+  const days = plan.days || [];
+  const i = dayIndex(plan, L.pd);
+  const d = days[i];
+  if (!d) return '<p class="muted">Kein Übungstag gefunden.</p>';
+  const done = !!plan.done?.[d.date];
+  const doneN = days.filter((x) => plan.done?.[x.date]).length;
+  const p = progress(s.id);
+  const res = p.dayResults?.[d.date];
+  const t = today();
+  const strip = days.map((x, k) => `<button class="day-dot ${plan.done?.[x.date] ? 'done' : ''} ${x.date === t ? 'today' : ''} ${k === i ? 'on' : ''}" data-act="dayPick" data-v="${x.date}" aria-label="Tag ${k + 1}">${k + 1}</button>`).join('');
+  const hour = s.remindHour ?? 17;
+  return `<div class="day-strip">${strip}</div>
+    <div class="cards-top"><span>Tag ${i + 1} von ${days.length} · ${esc(d.date === t ? 'heute' : dayWord(d.date))}</span><span>${doneN} erledigt</span></div>
+    <div class="pbar"><i style="width:${(doneN / Math.max(1, days.length)) * 100}%"></i></div>
+    <h4 class="day-focus">${esc(d.focus)}</h4>
+    ${d.warmup.length ? `<div class="warmup"><b>Aufwärmen</b>${d.warmup.map((w, k) => `<details class="wq"><summary>${k + 1}. ${esc(w.q)}</summary><p>${esc(w.a)}</p></details>`).join('')}</div>` : ''}
+    ${d.task.prompt ? `<div class="day-task"><b>Klausur-Übung${d.task.minutes ? ` · ca. ${d.task.minutes} Min.` : ''}</b>
+      <p class="quiz-q">${d.task.operator ? `<span class="op">${esc(d.task.operator)}</span> ` : ''}${esc(d.task.prompt)}</p>
+      <textarea class="input exam-input" data-in="dayAnswer" rows="6" maxlength="6000" placeholder="Deine Antwort …">${esc(p.dayAnswers?.[d.date] || '')}</textarea>
+      ${S.study?.ai ? `<button class="btn soft" data-act="dayCheck" ${S.busy.check ? 'disabled' : ''}>${S.busy.check ? '<span class="spin"></span>Wird bewertet …' : `${icon('spark')}Antwort bewerten lassen`}</button>` : ''}
+      ${res ? `<div class="exam-res"><div class="er-top"><b class="pt big ${res.points >= 13 ? 'g1' : res.points >= 10 ? 'g2' : res.points >= 5 ? 'g3' : 'g4'}">${res.points}</b><span>${esc(res.verdict)}</span></div>
+        ${res.good?.length ? `<b class="er-h ok">Gut</b><ul>${res.good.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${res.missing?.length ? `<b class="er-h bad">Fehlt noch</b><ul>${res.missing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${res.tip ? `<p class="er-tip">${icon('spark')}${esc(res.tip)}</p>` : ''}</div>` : ''}
+      <details class="expect"><summary>Erwartungshorizont zeigen</summary><p>${esc(d.task.expectation)}</p></details></div>` : ''}
+    <button class="btn ${done ? 'soft' : ''}" data-act="dayDone" data-v="${d.date}" data-done="${done ? '0' : '1'}">${icon('check')}${done ? 'Erledigt – rückgängig machen' : 'Übung erledigt'}</button>
+    <label class="row remind-row"><span class="label">Tägliche Erinnerung<small>Push an jedem Übungstag, bis du sie erledigt hast</small></span>
+      <select class="input inline" data-in="remindHour">${[[-1, 'aus'], [7, '7 Uhr'], [13, '13 Uhr'], [15, '15 Uhr'], [16, '16 Uhr'], [17, '17 Uhr'], [18, '18 Uhr'], [19, '19 Uhr'], [20, '20 Uhr']]
+        .map(([h, l]) => `<option value="${h}" ${hour === h ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+}
+
+/** Ansicht „Lernzettel“. */
+export function sheetHtml(sh, s) {
+  return `<div class="lz">
+    <h2 class="lz-title">${esc(sh.title)}</h2>
+    <p class="lz-meta">${esc(String(s.subject || '').replace(/\s+(LK|GK|ZK)$/i, ''))}${s.examDate ? ' · Klausur ' + esc(dateLong(s.examDate)) : ''}${s.task ? ' · ' + esc(s.task) : ''}</p>
+    ${sh.intro ? `<p class="lz-intro">${esc(sh.intro)}</p>` : ''}
+    ${sh.sections.map((x) => `<section class="lz-sec"><b>${esc(x.title)}</b><ul>${x.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></section>`).join('')}
+    ${sh.terms.length ? `<section class="lz-sec"><b>Fachbegriffe</b><dl class="terms">${sh.terms.map((k) => `<div><dt>${esc(k.term)}</dt><dd>${esc(k.def)}</dd></div>`).join('')}</dl></section>` : ''}
+    ${sh.taskGuide.length ? `<section class="lz-sec lz-guide"><b>So gehst du die Aufgabe an</b><ol>${sh.taskGuide.map((p) => `<li>${esc(p.replace(/^\d+[.)]\s*/, ''))}</li>`).join('')}</ol></section>` : ''}
+    ${sh.mistakes.length ? `<section class="lz-sec lz-warn"><b>Typische Fehler</b><ul>${sh.mistakes.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></section>` : ''}
+    ${sh.checklist.length ? `<section class="lz-sec"><b>Das musst du am Klausurtag können</b><ul class="lz-check">${sh.checklist.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></section>` : ''}
+  </div>`;
+}
+
+export function sheetView(s) {
+  return `${sheetHtml(s.sheet, s)}<button class="btn soft" data-act="sheetPrint">${icon('share')}Drucken oder als PDF sichern</button>`;
+}
+
+/** Vorschau-Daten. */
+export function demoPlan() {
+  const t = today();
+  return {
+    task: 'Gedichtinterpretation',
+    remindHour: 17,
+    sheet: {
+      title: 'Lyrik der Romantik', intro: 'Gedichte der Romantik (ca. 1795–1835) drücken Sehnsucht, Naturerleben und Fernweh aus.',
+      sections: [{ title: 'Merkmale der Romantik', points: ['Sehnsucht nach dem Unendlichen', 'Natur als Spiegel der Seele', 'Nacht, Traum, Wandern'] },
+        { title: 'Formale Analyse', points: ['Metrum und Reimschema bestimmen', 'Stilmittel mit Wirkung nennen'] }],
+      terms: [{ term: 'Enjambement', def: 'Der Satz geht über das Versende hinaus.' }, { term: 'Synästhesie', def: 'Verbindung mehrerer Sinneseindrücke.' }],
+      taskGuide: ['Einleitung: Autor, Titel, Jahr, Thema', 'Inhalt kurz wiedergeben', 'Form und Sprache analysieren – immer mit Wirkung', 'Deutung in Bezug zur Epoche', 'Schluss: Deutungshypothese bestätigen'],
+      mistakes: ['Stilmittel nur aufzählen statt deuten', 'Lyrisches Ich mit dem Autor gleichsetzen'],
+      checklist: ['5 Merkmale der Romantik nennen', 'Metrum sicher bestimmen'],
+    },
+    plan: {
+      start: t, done: {},
+      days: [0, 1, 2].map((k) => ({
+        date: addDays(t, k), focus: ['Begriffe & Merkmale', 'Formanalyse üben', 'Generalprobe'][k],
+        warmup: [{ q: 'Was ist ein Enjambement?', a: 'Ein Zeilensprung: Der Satz geht über das Versende hinaus.' }, { q: 'Nenne zwei Motive der Romantik.', a: 'Sehnsucht und Nacht.' }],
+        task: { operator: 'analysieren', prompt: 'Analysiere die erste Strophe von Eichendorffs „Mondnacht“ hinsichtlich Form und Wirkung.', expectation: 'Kreuzreim, Jambus, Personifikation „Himmel küsst Erde“, Wirkung: Einheit von Himmel und Erde, Sehnsucht.', minutes: 20 },
+      })),
+    },
+  };
+}
