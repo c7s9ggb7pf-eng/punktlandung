@@ -1142,8 +1142,10 @@ const actions = {
   // ---------- 1.11: Lernseite (Multiple Choice → Lückentext → Anwenden) ----------
   lpOpen(el) {
     const id = el.dataset.v;
-    const stage = !LN.unlocked(id, 'cloze') ? 'mc' : !LN.unlocked(id, 'apply') ? 'cloze' : 'apply';
-    S.lp = { id, stage, i: 0, pick: null, right: 0, fills: [], checked: false };
+    const path = LN.pathOf(id);
+    const stage = !path.sheet && path.mc == null ? 'sheet' : !LN.unlocked(id, 'cloze') ? 'mc' : !LN.unlocked(id, 'apply') ? 'cloze' : 'apply';
+    S.lp = { id, stage, i: 0, pick: null, right: 0, fills: [], checked: false, side: false, timer: null };
+    LN.startTicker(S);
     closeSheet(true);
     S._studyOpen = id; // nach dem Schließen setzen – onClose des Blatts löscht die Markierung
     S.learn.ei = 0;
@@ -1166,6 +1168,22 @@ const actions = {
     haptic(5);
     render();
     window.scrollTo(0, 0);
+  },
+  lpSide() { S.lp.side = !S.lp.side; haptic(5); render(); },
+  lpSheetDone() {
+    const p = ST.progress(S.lp.id);
+    p.path = { ...LN.pathOf(S.lp.id), sheet: true };
+    ST.saveProgress(S.lp.id, p);
+    return actions.lpStage({ dataset: { v: 'mc' } });
+  },
+  lpTimer(el) { S.lp.timer = { i: S.lp.i, end: Date.now() + Number(el.dataset.v) * 60000 }; haptic(8); render(); },
+  lpSubmit() {
+    const p = ST.progress(S.lp.id);
+    p.path = { ...LN.pathOf(S.lp.id), submitted: new Date().toISOString() };
+    ST.saveProgress(S.lp.id, p);
+    setTimeout(() => confetti({ y: 0.5, count: 110 }), 100);
+    toast('Abgegeben – stark gemacht! 💪');
+    render();
   },
   lpRestart() { S.lp = { ...S.lp, i: 0, pick: null, right: 0, fills: [], checked: false }; render(); window.scrollTo(0, 0); },
   lpPick(el) {
@@ -1596,6 +1614,7 @@ const inputs = {
     const p = ST.progress(set.id);
     p.answers[S.learn.ei] = el.value;
     ST.saveProgress(set.id, p);
+    if (S.screen === 'learn') LN.live(S, set, el.value);
   },
   abiDate(el) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
