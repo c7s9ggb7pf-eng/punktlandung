@@ -465,6 +465,17 @@ document.addEventListener('change', (e) => {
 });
 
 const confirmedNoTask = new Set();
+const autoTried = new Set();
+/** Material da, aber noch keine KI-Übungen? Dann einmal von selbst erstellen lassen (auch für ältere Lernsets). */
+async function autoPrep(set) {
+  if (!set || S.demo || !S.study?.ai || set.plan || !set.docs?.length || autoTried.has(set.id)) return;
+  if (set.prepStatus === 'working' || set.prepStatus === 'error') return;
+  autoTried.add(set.id);
+  try {
+    setStudy(await api('studyPrep', { id: set.id }, { timeout: 30000 }));
+    toast('Die KI erstellt jetzt Lernzettel und Tagesübungen aus deinem Material (1–2 Minuten).', 4000);
+  } catch { /* dann bleibt der einfache Lernplan */ }
+}
 let taskTimer = null;
 /** Aufgabenstellung speichern (sofort bei Chip, verzögert beim Tippen). */
 async function saveTask(v, delay = 0) {
@@ -486,6 +497,7 @@ function refreshSetSheet() {
 }
 function setStudy(r) {
   S.study = { ai: !!r.ai, aiName: r.aiName || null, sets: r.sets || [], loading: false };
+  if (S._studyOpen) setTimeout(() => autoPrep(curSet()), 0);
   if (S._openStudy && S.study.sets.some((x) => x.id === S._openStudy)) {
     const id = S._openStudy;
     S._openStudy = null;
@@ -888,6 +900,7 @@ const actions = {
     const set0 = curSet();
     S.learn.mode = PL.planOf(set0) ? 'today' : set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
     openSheet(ST.setSheet(S, curSet(), V), { onClose: () => { S._studyOpen = null; if (S.tab === 'aufgaben') render(); } });
+    autoPrep(set0);
   },
   async studyDocDel(el) {
     const set = curSet();

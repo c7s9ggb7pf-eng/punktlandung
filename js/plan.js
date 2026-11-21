@@ -20,7 +20,12 @@ export function taskBlock(S, s) {
 
 /** Knopf / Status für Lernzettel + Tagesübungen (nur mit KI). */
 export function prepBlock(S, s) {
-  if (!S.study?.ai) return '';
+  if (!S.study?.ai) {
+    if (S.demo || !s.docs.length) return '';
+    return `<div class="ai-off"><b>KI-Übungen sind noch aus</b>
+      <span>Auf dem Server fehlt der kostenlose Gemini-Schlüssel – deshalb gibt es bisher nur den einfachen Lernplan unten.</span>
+      <span>So schaltest du sie ein: Supabase → Projekt <b>Bergauf</b> → <b>Edge Functions</b> → <b>Secrets</b> → Name <code>GEMINI_API_KEY</code>, Wert = dein Schlüssel aus <b>aistudio.google.com</b> („Get API key“). Danach die App neu öffnen – die Übungen entstehen dann von selbst.</span></div>`;
+  }
   if (s.prepStatus === 'working') {
     return `<div class="gen-wait"><span class="spin"></span><span><b>Lernzettel und Tagesübungen werden erstellt …</b><small>Meist 1–2 Minuten. Du kannst das Blatt schließen.</small></span></div>`;
   }
