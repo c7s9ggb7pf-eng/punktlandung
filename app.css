@@ -1331,3 +1331,52 @@ label.up input[type=file], label.up-row input[type=file] { position: absolute; i
 }
 @media (min-width: 900px) { .lp-ch h2 { font-size: 30px; } }
 #app:has(.lp2) { max-width: 1180px; }
+
+/* ---------- 1.13: Ruhiger lernen – Fokus-Modus, Checkliste nach „Fertig“, Timer-Balken ---------- */
+/* ruhigere Gestaltung */
+.lp-card { box-shadow: none; background: transparent; padding-left: 2px; padding-right: 2px; }
+.lp-st { box-shadow: none; background: var(--card-2); }
+.lp-top { border-bottom-color: transparent; }
+.lp-task { color: var(--text); }
+.lp-q { font-size: 17px; line-height: 1.6; max-width: 65ch; }
+.lp2 .pbar { height: 3px; border-radius: 3px; }
+.lp2 .cards-top { font-size: 12px; opacity: .7; }
+.lp2 .quiz-q, .lp2 .cloze-text { font-size: 18px; line-height: 1.6; max-width: 60ch; }
+.lp-paper { display: block; width: 100%; max-width: 68ch; min-height: 42dvh; margin: 8px 0 4px; padding: 16px 18px; border: 0; border-radius: 18px;
+  background: var(--card); box-shadow: 0 0 0 1px var(--line); font: 400 17px/1.75 var(--body, inherit); resize: vertical; }
+.lp-paper:focus { outline: none; box-shadow: 0 0 0 1.5px oklch(62% .16 var(--h) / .55); }
+.lp-meta { display: flex; justify-content: space-between; max-width: 68ch; margin-bottom: 14px; }
+.lp-meta .lp-saved { margin: 0; }
+.lp-hint.center { text-align: center; margin-top: 8px; }
+@media (min-width: 900px) { .lp-card { padding: 20px 8px 30px; } }
+
+/* Timer als dünner, ablaufender Balken */
+.lp-tbar { position: relative; height: 4px; margin: 4px 0 12px; max-width: 68ch; border-radius: 4px; background: var(--card-2); overflow: hidden; }
+.lp-tbar i { position: absolute; inset: 0 auto 0 0; background: oklch(64% .14 var(--h)); border-radius: 4px; transition: width 1s linear; }
+.lp-tbar.soon i { background: oklch(72% .15 70); animation: lpPulse 2s ease-in-out infinite; }
+.lp-tbar.over i { width: 100% !important; background: var(--coral); opacity: .5; animation: none; }
+@keyframes lpPulse { 50% { opacity: .45; } }
+
+/* Fokus-Leiste unten (nur im Fokus-Modus sichtbar) */
+.lp-fbar { display: none; }
+.learn-page.focus .lp-fbar { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 12px); transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 999px; white-space: nowrap;
+  background: color-mix(in oklab, var(--card) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.12); font: 600 13px var(--mono); color: var(--text-2); }
+.lp-cnt-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.lp-cnt-wrap .ico { width: 14px; height: 14px; color: oklch(62% .15 150); }
+.lp-fdone { border: 0; padding: 8px 14px; border-radius: 999px; background: oklch(62% .16 var(--h)); color: #fff; font: 700 13px var(--body, inherit); cursor: pointer; }
+.lp-fx { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--card-2); color: var(--text-2); cursor: pointer; }
+.lp-fx .ico { width: 15px; height: 15px; }
+
+/* Fokus-Modus: alles außer Aufgabe, Text und Leiste ausblenden */
+.learn-page.focus .lp-top, .learn-page.focus .lp-steps-nav, .learn-page.focus .lp-side,
+.learn-page.focus .lp-nofocus, .learn-page.focus .lp-meta, .learn-page.focus .lp-checklist { display: none !important; }
+.learn-page.focus .lp-grid { display: block; max-width: 72ch; margin: 0 auto; }
+.learn-page.focus .lp-card { padding-top: calc(env(safe-area-inset-top) + 18px); padding-bottom: 90px; }
+.learn-page.focus .lp-q { font-size: 15px; color: var(--text-2); }
+.learn-page.focus .lp-paper { min-height: 60dvh; box-shadow: none; background: transparent; padding: 4px 0; border-radius: 0; }
+.learn-page.focus .lp-paper:focus { box-shadow: none; }
+.learn-page.focus .lp-fbar { max-width: calc(100% - 24px); gap: 10px; font-size: 12px; }
+@media (max-width: 380px) { .learn-page.focus .lp-fbar .lp-words { display: none; } }
+.lp-checklist { scroll-margin-top: 140px; }

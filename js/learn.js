@@ -1,7 +1,7 @@
 // Punktlandung – Lernseite wie ein Trainingsplan: Lernzettel → 1. Multiple Choice → 2. Lückentext → 3. Anwenden → Abgabe.
 // Jede Stufe ist eine Aufgabenkarte mit Zeit und Anleitung; beim Anwenden gibt es Timer, Wortzähler und eine
 // Checkliste, die sich beim Schreiben selbst abhakt. Fortschritt nur auf dem Handy.
-import { esc, icon, hue } from './ui.js';
+import { esc, icon, hue, haptic } from './ui.js';
 import { daysFromToday } from './lib.js';
 import { progress, saveProgress } from './study.js';
 import { sheetHtml } from './plan.js';
@@ -91,10 +91,12 @@ function checklistHtml(q, text) {
 export function live(S, s, text) {
   const q = s?.material?.questions?.[S.lp?.i ?? 0];
   if (!q) return;
-  const box = document.querySelector('.lp-checklist');
+  const box = document.querySelector('.lp-checklist.full');
   if (box) box.innerHTML = checklistHtml(q, text);
-  const w = document.querySelector('.lp-words');
-  if (w) w.textContent = `${countWords(text)} / ${wordsOf(q)} Wörter`;
+  const st = checkState(q, text);
+  const n = `${st.filter((x) => x.ok).length}/${st.length}`;
+  document.querySelectorAll('.lp-cnt').forEach((el) => { el.textContent = n; });
+  document.querySelectorAll('.lp-words').forEach((el) => { el.textContent = `${countWords(text)} / ${wordsOf(q)} Wörter`; });
   const v = document.querySelector('[data-step="apply"] .lp-st-v');
   if (v) v.textContent = String(countWords(text));
   const sv = document.querySelector('.lp-saved');
@@ -107,11 +109,15 @@ const fmt = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Ma
 export function startTicker(S) {
   clearInterval(tick);
   tick = setInterval(() => {
-    const el = document.querySelector('.lp-timer');
-    if (!el || !S.lp?.timer) return;
-    const left = S.lp.timer.end - Date.now();
-    el.textContent = left > 0 ? `${fmt(left)} übrig` : 'Zeit um';
-    el.classList.toggle('over', left <= 0);
+    const T = S.lp?.timer;
+    if (!T || S.screen !== 'learn') return;
+    const left = T.end - Date.now();
+    const pct = Math.max(0, Math.min(100, (left / (T.end - T.start)) * 100));
+    document.querySelectorAll('.lp-tbar i').forEach((i) => { i.style.width = pct + '%'; });
+    document.querySelectorAll('.lp-tleft').forEach((el) => { el.textContent = left > 0 ? `${Math.ceil(left / 60000)} Min.` : 'Zeit um'; });
+    document.querySelectorAll('.lp-tbar').forEach((b) => { b.classList.toggle('soon', left > 0 && left <= 120000); b.classList.toggle('over', left <= 0); });
+    if (left <= 120000 && left > 0 && !T.warned) { T.warned = true; haptic(40); }
+    if (left <= 0 && !T.done) { T.done = true; haptic(120); }
   }, 1000);
 }
 
@@ -147,7 +153,7 @@ export function learnPage(S, s) {
   }).join('');
   const body = LP.stage === 'sheet' ? sheetStage(S, s) : LP.stage === 'cloze' ? clozeStage(S, s) : LP.stage === 'apply' ? applyStage(S, s) : LP.stage === 'done' ? doneStage(S, s) : mcStage(S, s);
   const side = LP.side && LP.stage !== 'sheet' ? `<aside class="lp-side">${s.sheet ? sheetHtml(s.sheet, s) : summaryHtml(s)}</aside>` : '';
-  return `<main class="screen learn-page lp2 ${side ? 'with-side' : ''}" style="--h:${hue(s.su, s.subject)}">
+  return `<main class="screen learn-page lp2 ${side ? 'with-side' : ''} ${LP.focus && LP.stage === 'apply' ? 'focus' : ''}" style="--h:${hue(s.su, s.subject)}">
     <header class="lp-top">
       <button class="icon-btn" data-act="lpClose" aria-label="Zurück">${icon('left')}</button>
       <span class="lp-title"><small>${esc(short(s.subject))}</small><b>${esc(m.topic || s.title || 'Lernen')}</b></span>
@@ -251,6 +257,14 @@ function clozeStage(S, s) {
       : `<button class="btn" data-act="lpCheck" ${full ? '' : 'disabled'}>Prüfen</button>`}`;
 }
 
+function timerBar(LP, i) {
+  const T = LP.timer && LP.timer.i === i ? LP.timer : null;
+  if (!T) return '';
+  const left = T.end - Date.now();
+  const pct = Math.max(0, Math.min(100, (left / (T.end - T.start)) * 100));
+  return `<div class="lp-tbar ${left <= 0 ? 'over' : left <= 120000 ? 'soon' : ''}"><i style="width:${pct}%"></i></div>`;
+}
+
 function applyStage(S, s) {
   const LP = S.lp;
   const qs = s.material.questions || [];
@@ -261,27 +275,48 @@ function applyStage(S, s) {
   const text = prog.answers?.[i] || '';
   const r = prog.results?.[i];
   const min = minutesOf(q);
+  const reviewed = !!pathOf(s.id).review?.[i];
+  const st = checkState(q, text);
+  const cnt = `${st.filter((x) => x.ok).length}/${st.length}`;
+  const T = LP.timer && LP.timer.i === i ? LP.timer : null;
+  const left = T ? T.end - Date.now() : 0;
   const strip = qs.map((x, k) => `<button class="day-dot ${countWords(prog.answers?.[k]) >= 20 ? 'done' : ''} ${k === i ? 'on' : ''}" data-act="lpGo" data-v="${k}">${k + 1}</button>`).join('');
-  const t = LP.timer && LP.timer.i === i ? LP.timer : null;
-  const left = t ? t.end - Date.now() : 0;
   const plan = `${Math.max(1, Math.round(min * 0.15))} Min. planen, ${Math.round(min * 0.7)} Min. schreiben, ${Math.max(1, Math.round(min * 0.15))} Min. Korrekturlesen.`;
-  return `${cardHead(3, `Anwenden · Aufgabe ${i + 1}`, min, '')}
-    <div class="day-strip">${strip}</div>
-    <p class="lp-task"><span class="op">${esc(q.operator)}</span> ${esc(q.question)}</p>
-    <p class="lp-hint">Ca. ${wordsOf(q)} Wörter. ${plan} Den Lernzettel öffnest du oben mit „Lernzettel daneben“.</p>
-    ${t ? `<div class="lp-timer ${left <= 0 ? 'over' : ''}">${left > 0 ? `${fmt(left)} übrig` : 'Zeit um'}</div>`
-      : `<button class="btn soft lp-timer-btn" data-act="lpTimer" data-v="${min}">${icon('clock')}Timer starten (${min} Min.)</button>`}
-    <div class="lp-checklist">${checklistHtml(q, text)}</div>
-    <div class="lp-write-head"><small class="lp-kicker">Dein Text</small><span class="lp-words">${countWords(text)} / ${wordsOf(q)} Wörter</span></div>
-    <textarea class="input exam-input" data-in="examAnswer" rows="10" maxlength="6000" placeholder="Schreib so, wie du es in der Klausur schreiben würdest …">${esc(text)}</textarea>
-    <div class="lp-saved">${text ? '✓ Gespeichert' : ''}</div>
-    ${S.study?.ai ? `<button class="btn" data-act="lpCheckApply" ${S.busy.check ? 'disabled' : ''}>${S.busy.check ? '<span class="spin"></span>Wird bewertet …' : `${icon('spark')}Antwort bewerten lassen`}</button>` : ''}
-    ${r ? `<div class="exam-res"><div class="er-top"><b class="pt big ${r.points >= 13 ? 'g1' : r.points >= 10 ? 'g2' : r.points >= 5 ? 'g3' : 'g4'}">${r.points}</b><span>${esc(r.verdict)}</span></div>
-      ${r.good?.length ? `<b class="er-h ok">Gut</b><ul>${r.good.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-      ${r.missing?.length ? `<b class="er-h bad">Fehlt noch</b><ul>${r.missing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-      ${r.tip ? `<p class="er-tip">${icon('spark')}${esc(r.tip)}</p>` : ''}</div>` : ''}
-    <details class="expect"><summary>Erwartungshorizont zeigen (erst nach dem Schreiben!)</summary><p>${esc(q.expectation)}</p></details>
-    ${i + 1 < qs.length ? `<button class="btn soft" data-act="lpGo" data-v="${i + 1}">Nächste Aufgabe</button>` : `<button class="btn soft" data-act="lpStage" data-v="done">Zur Abgabe</button>`}`;
+  return `<div class="lp-nofocus">${cardHead(3, `Anwenden · Aufgabe ${i + 1}`, min, '')}<div class="day-strip">${strip}</div></div>
+    <p class="lp-task lp-q"><span class="op">${esc(q.operator)}</span> ${esc(q.question)}</p>
+    <div class="lp-nofocus">
+      <p class="lp-hint">Ca. ${wordsOf(q)} Wörter. ${plan}</p>
+      ${T ? '' : `<button class="btn soft lp-timer-btn" data-act="lpTimer" data-v="${min}">${icon('clock')}Timer starten · ${min} Min.</button>`}
+    </div>
+    ${timerBar(LP, i)}
+    ${reviewed ? `<div class="lp-checklist full">${checklistHtml(q, text)}</div>` : ''}
+    <textarea class="input exam-input lp-paper" data-in="examAnswer" rows="12" maxlength="6000" placeholder="Schreib so, wie du es in der Klausur schreiben würdest …">${esc(text)}</textarea>
+    <div class="lp-meta"><span class="lp-words">${countWords(text)} / ${wordsOf(q)} Wörter</span><span class="lp-saved">${text ? '✓ Gespeichert' : ''}</span></div>
+    <div class="lp-fbar">
+      ${T ? `<span class="lp-tleft">${left > 0 ? `${Math.ceil(left / 60000)} Min.` : 'Zeit um'}</span>` : ''}
+      <span class="lp-words">${countWords(text)} / ${wordsOf(q)} Wörter</span>
+      <span class="lp-cnt-wrap">${icon('check')}<span class="lp-cnt">${cnt}</span></span>
+      ${reviewed ? '' : `<button class="lp-fdone" data-act="lpFinish">Fertig</button>`}
+      <button class="lp-fx" data-act="lpFocusOff" aria-label="Fokus beenden">${icon('x')}</button>
+    </div>
+    <div class="lp-nofocus">
+      ${reviewed ? '' : `<button class="btn" data-act="lpFinish">${icon('check')}Fertig – Checkliste und Erwartungshorizont ansehen</button>
+        <p class="lp-hint center">Die Checkliste (gerade <b class="lp-cnt">${cnt}</b>) siehst du erst nach dem Schreiben – wie bei einer echten Korrektur.</p>`}
+      ${S.study?.ai && reviewed ? `<button class="btn" data-act="lpCheckApply" ${S.busy.check ? 'disabled' : ''}>${S.busy.check ? '<span class="spin"></span>Wird bewertet …' : `${icon('spark')}Antwort bewerten lassen`}</button>` : ''}
+      ${r ? `<div class="exam-res"><div class="er-top"><b class="pt big ${r.points >= 13 ? 'g1' : r.points >= 10 ? 'g2' : r.points >= 5 ? 'g3' : 'g4'}">${r.points}</b><span>${esc(r.verdict)}</span></div>
+        ${r.good?.length ? `<b class="er-h ok">Gut</b><ul>${r.good.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${r.missing?.length ? `<b class="er-h bad">Fehlt noch</b><ul>${r.missing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${r.tip ? `<p class="er-tip">${icon('spark')}${esc(r.tip)}</p>` : ''}</div>` : ''}
+      ${reviewed ? `<details class="expect" open><summary>Erwartungshorizont</summary><p>${esc(q.expectation)}</p></details>` : ''}
+      ${i + 1 < qs.length ? `<button class="btn soft" data-act="lpGo" data-v="${i + 1}">Nächste Aufgabe</button>` : `<button class="btn soft" data-act="lpStage" data-v="done">Zur Abgabe</button>`}
+    </div>`;
+}
+
+/** Fokus-Modus an/aus ohne Neuzeichnen (der Cursor bleibt im Textfeld). */
+export function setFocus(S, on) {
+  if (!S.lp || S.lp.stage !== 'apply') return;
+  S.lp.focus = on;
+  document.querySelector('.learn-page')?.classList.toggle('focus', on);
 }
 
 function doneStage(S, s) {

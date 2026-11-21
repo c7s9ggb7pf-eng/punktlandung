@@ -1155,6 +1155,7 @@ const actions = {
   },
   lpClose() {
     const id = S.lp?.id;
+    keepAwake(false);
     S.screen = 'main';
     S.tab = 'aufgaben';
     render();
@@ -1163,7 +1164,7 @@ const actions = {
   lpStage(el) {
     const k = el.dataset.v;
     if (!LN.unlocked(S.lp.id, k)) return toast(`Erst die vorige Stufe mit mindestens ${LN.PASS} % schaffen.`);
-    S.lp = { ...S.lp, stage: k, i: 0, pick: null, right: 0, fills: [], checked: false };
+    S.lp = { ...S.lp, stage: k, i: 0, pick: null, right: 0, fills: [], checked: false, focus: false };
     S.learn.ei = 0;
     haptic(5);
     render();
@@ -1176,7 +1177,30 @@ const actions = {
     ST.saveProgress(S.lp.id, p);
     return actions.lpStage({ dataset: { v: 'mc' } });
   },
-  lpTimer(el) { S.lp.timer = { i: S.lp.i, end: Date.now() + Number(el.dataset.v) * 60000 }; haptic(8); render(); },
+  lpTimer(el) {
+    const now = Date.now();
+    S.lp.timer = { i: S.lp.i, start: now, end: now + Number(el.dataset.v) * 60000 };
+    S.lp.focus = true;
+    haptic(8);
+    render();
+    keepAwake(true);
+    const ta = document.querySelector('.exam-input');
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  },
+  lpFinish() {
+    const p = ST.progress(S.lp.id);
+    const path = LN.pathOf(S.lp.id);
+    p.path = { ...path, review: { ...(path.review || {}), [S.lp.i]: true } };
+    ST.saveProgress(S.lp.id, p);
+    S.lp.focus = false;
+    S.lp.timer = null;
+    keepAwake(false);
+    document.activeElement?.blur?.();
+    haptic(10);
+    render();
+    document.querySelector('.lp-checklist')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+  lpFocusOff() { document.activeElement?.blur?.(); LN.setFocus(S, false); },
   lpSubmit() {
     const p = ST.progress(S.lp.id);
     p.path = { ...LN.pathOf(S.lp.id), submitted: new Date().toISOString() };
@@ -1235,7 +1259,7 @@ const actions = {
     render();
     window.scrollTo(0, 0);
   },
-  lpGo(el) { S.lp.i = Number(el.dataset.v); S.learn.ei = S.lp.i; render(); window.scrollTo(0, 0); },
+  lpGo(el) { S.lp.focus = false; S.lp.i = Number(el.dataset.v); S.learn.ei = S.lp.i; render(); window.scrollTo(0, 0); },
   lpCheckApply() { S.learn.ei = S.lp.i; return actions.examCheck(); },
 
   // ---------- 1.7: Lernen, Teilen, Kalender, Countdown ----------
@@ -1638,6 +1662,18 @@ const inputs = {
     inputs._t = setTimeout(() => savePrefs({ nick: el.value.trim() }), 300);
   },
 };
+
+// 1.13: Fokus-Modus, sobald man ins Antwortfeld der Lernseite tippt
+document.addEventListener('focusin', (e) => {
+  if (S.screen === 'learn' && e.target.closest?.('.exam-input')) LN.setFocus(S, true);
+});
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+    else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch { /* nicht unterstützt */ }
+}
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
