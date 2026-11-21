@@ -2,6 +2,7 @@
 import { esc, icon, hue } from './ui.js';
 import { today, daysFromToday, dateLong, addDays } from './lib.js';
 import * as PL from './plan.js';
+import * as LN from './learn.js';
 
 const short = (s) => String(s || '').replace(/\s+(LK|GK|ZK)$/i, '');
 const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -109,6 +110,7 @@ export function setSheet(S, s, V) {
   return `<div class="sheet-body study-sheet" style="--h:${hue(s.su, s.subject)}">
     <div class="sheet-kicker">${esc(short(s.subject))}${s.examDate ? ' · ' + esc(dateLong(s.examDate)) + ' · ' + esc(examWhen(s.examDate)) : ''}</div>
     <h3 class="sheet-title"><i class="subj-dot"></i>${esc(m?.topic || s.title || 'Lernset')}</h3>
+    ${LN.startCard(S, s)}
     ${showModes ? modes(S, s, V) : ''}
     ${PL.taskBlock(S, s)}
     ${PL.prepBlock(S, s)}
@@ -292,6 +294,10 @@ export function demoStudy(blocks) {
           { front: 'What is outsourcing?', back: 'Moving parts of production or services to external companies, often abroad, to cut costs.' },
           { front: 'Define “glocalisation”.', back: 'Global products adapted to local tastes – e.g. McDonald’s menus in India.' },
           { front: 'Name two winners of globalisation.', back: 'Multinational corporations and consumers in rich countries (cheaper goods).' },
+        ],
+        cloze: [
+          { text: 'Moving production to low-wage countries is called ___.', gaps: ['outsourcing'], distractors: ['glocalisation', 'free trade'], explanation: 'Outsourcing means relocating parts of production to cut costs.' },
+          { text: 'The ___ sets the rules for world trade, while ___ adapts global products to local tastes.', gaps: ['WTO', 'glocalisation'], distractors: ['UNESCO', 'outsourcing'], explanation: 'WTO = World Trade Organization; glocalisation = global + local.' },
         ],
         quiz: [
           { question: 'Which organisation sets the rules for world trade?', options: ['UNESCO', 'WTO', 'NATO', 'WHO'], correct: 1, explanation: 'The World Trade Organization negotiates and enforces trade rules.' },

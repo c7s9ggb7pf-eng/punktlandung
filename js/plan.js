@@ -67,7 +67,11 @@ export function localPlan(s) {
   const start = p.localStart;
   const dates = planDates(s.examDate, start);
   const n = dates.length;
-  const docs = s.docs.map((d) => d.name.replace(/\.[^.]+$/, ''));
+  // iPhone-Fotos heißen oft nur nach einer Kennung (z. B. „e8291628-22d6-…“) – dann neutral „Foto 1“ usw.
+  const docs = s.docs.map((d, k) => {
+    const n = d.name.replace(/\.[^.]+$/, '');
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-|^IMG_\d+$|^image\d*$/i.test(n) ? `${d.mime === 'application/pdf' ? 'Dokument' : 'Foto'} ${k + 1}` : n;
+  });
   const doc = (i) => docs[i % docs.length];
   const task = s.task ? `im Stil „${s.task}“` : 'wie in der Klausur';
   const days = dates.map((date, i) => {

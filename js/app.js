@@ -11,6 +11,7 @@ import * as G from './grades.js';
 import * as ST from './study.js';
 import * as CH from './chat.js';
 import * as PL from './plan.js';
+import * as LN from './learn.js';
 
 const root = document.getElementById('app');
 
@@ -42,7 +43,8 @@ function render() {
     clearInterval(S._wTimer);
   }
   if (S.screen === 'main' && S.tab === 'noten') ensureSubjects();
-  root.innerHTML = S.screen === 'ob' ? V.onboarding(S) : S.screen === 'main' ? V.main(S) : V.loading();
+  root.innerHTML = S.screen === 'ob' ? V.onboarding(S) : S.screen === 'main' ? V.main(S)
+    : S.screen === 'learn' ? LN.learnPage(S, S.study?.sets?.find((x) => x.id === S.lp?.id)) : V.loading();
   root.classList.toggle('enter', changed);
   root.classList.toggle('day-enter', !changed && !!S._dayChanged);
   S._dayChanged = false;
@@ -426,10 +428,10 @@ async function uploadFiles(files) {
   if (!done) return;
   // Mit KI: Lernzettel + Tagesübungen gleich automatisch erstellen (nur beim ersten Mal).
   const cur = curSet();
-  if (S.study?.ai && !S.demo && cur && !cur.plan && cur.prepStatus !== 'working') {
+  if (S.study?.ai && !S.demo && cur && !cur.material && cur.status !== 'working') {
     try {
-      setStudy(await api('studyPrep', { id: cur.id }, { timeout: 30000 }));
-      toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen – die KI erstellt jetzt Lernzettel und Tagesübungen.`, 4000);
+      setStudy(await api('studyGenerate', { id: cur.id }, { timeout: 30000 }));
+      toast(`${done} ${done === 1 ? 'Dokument' : 'Dokumente'} hochgeladen – die KI erstellt jetzt deine Lernaufgaben.`, 4000);
       return;
     } catch { /* dann eben nur der Plan ohne KI */ }
   }
@@ -468,12 +470,12 @@ const confirmedNoTask = new Set();
 const autoTried = new Set();
 /** Material da, aber noch keine KI-Übungen? Dann einmal von selbst erstellen lassen (auch für ältere Lernsets). */
 async function autoPrep(set) {
-  if (!set || S.demo || !S.study?.ai || set.plan || !set.docs?.length || autoTried.has(set.id)) return;
-  if (set.prepStatus === 'working' || set.prepStatus === 'error') return;
+  if (!set || S.demo || !S.study?.ai || set.material || !set.docs?.length || autoTried.has(set.id)) return;
+  if (set.status === 'working' || set.status === 'error') return;
   autoTried.add(set.id);
   try {
-    setStudy(await api('studyPrep', { id: set.id }, { timeout: 30000 }));
-    toast('Die KI erstellt jetzt Lernzettel und Tagesübungen aus deinem Material (1–2 Minuten).', 4000);
+    setStudy(await api('studyGenerate', { id: set.id }, { timeout: 30000 }));
+    toast('Die KI erstellt jetzt deine Lernaufgaben: Multiple Choice, Lückentexte und Anwendungsaufgaben (1–2 Minuten).', 4500);
   } catch { /* dann bleibt der einfache Lernplan */ }
 }
 let taskTimer = null;
@@ -527,7 +529,7 @@ function pollStudy() {
     for (const x of S.study.sets) {
       if (was.has(x.id) && x.status !== 'working') {
         haptic(15);
-        toast(x.status === 'ready' ? `Lernhilfe für ${x.material?.topic || x.subject} ist fertig 🎉` : x.error || 'Lernhilfe ging schief.', 3800);
+        toast(x.status === 'ready' ? `Deine Lernaufgaben zu ${x.material?.topic || x.subject} sind fertig 🎉 – tippe auf „Lernen starten“.` : x.error || 'Lernhilfe ging schief.', 4200);
       }
       if (wasPrep.has(x.id) && x.prepStatus !== 'working') {
         haptic(15);
@@ -1115,21 +1117,108 @@ const actions = {
     ST.saveProgress(set.id, p);
     if (S.demo) {
       p.results[i] = { points: 10, verdict: 'Solide Antwort mit klarer Struktur (Vorschau).', good: ['Richtige Fachbegriffe'], missing: ['Ein konkretes Beispiel aus dem Material'], tip: 'Beim Operator „assess“ brauchst du ein begründetes eigenes Urteil am Ende.' };
+      p.path = { ...LN.pathOf(set.id), apply: { ...(LN.pathOf(set.id).apply || {}), [i]: 10 } };
       ST.saveProgress(set.id, p);
-      return refreshSetSheet();
+      refreshSetSheet();
+      if (S.screen === 'learn') render();
+      return;
     }
     S.busy.check = true;
     refreshSetSheet();
+    if (S.screen === 'learn') render();
     try {
       const r = await api('studyCheck', { id: set.id, index: i, answer }, { timeout: 90000 });
       const q = ST.progress(set.id);
       q.results[i] = r;
+      q.path = { ...LN.pathOf(set.id), apply: { ...(LN.pathOf(set.id).apply || {}), [i]: r.points } };
       ST.saveProgress(set.id, q);
       if (r.points >= 13) setTimeout(() => confetti({ y: 0.5, count: 80 }), 150);
     } catch (e) { toast(e.message, 4000); }
     S.busy.check = false;
     refreshSetSheet();
+    if (S.screen === 'learn') render();
   },
+
+  // ---------- 1.11: Lernseite (Multiple Choice → Lückentext → Anwenden) ----------
+  lpOpen(el) {
+    const id = el.dataset.v;
+    const stage = !LN.unlocked(id, 'cloze') ? 'mc' : !LN.unlocked(id, 'apply') ? 'cloze' : 'apply';
+    S.lp = { id, stage, i: 0, pick: null, right: 0, fills: [], checked: false };
+    closeSheet(true);
+    S._studyOpen = id; // nach dem Schließen setzen – onClose des Blatts löscht die Markierung
+    S.learn.ei = 0;
+    S.screen = 'learn';
+    render();
+    window.scrollTo(0, 0);
+  },
+  lpClose() {
+    const id = S.lp?.id;
+    S.screen = 'main';
+    S.tab = 'aufgaben';
+    render();
+    if (id) actions.studyOpen({ dataset: { v: id } });
+  },
+  lpStage(el) {
+    const k = el.dataset.v;
+    if (!LN.unlocked(S.lp.id, k)) return toast(`Erst die vorige Stufe mit mindestens ${LN.PASS} % schaffen.`);
+    S.lp = { ...S.lp, stage: k, i: 0, pick: null, right: 0, fills: [], checked: false };
+    S.learn.ei = 0;
+    haptic(5);
+    render();
+    window.scrollTo(0, 0);
+  },
+  lpRestart() { S.lp = { ...S.lp, i: 0, pick: null, right: 0, fills: [], checked: false }; render(); window.scrollTo(0, 0); },
+  lpPick(el) {
+    if (S.lp.pick != null) return;
+    const set = S.study.sets.find((x) => x.id === S.lp.id);
+    const q = set.material.quiz[S.lp.i];
+    S.lp.pick = Number(el.dataset.v);
+    if (S.lp.pick === q.correct) { S.lp.right++; haptic(10); } else haptic(25);
+    render();
+  },
+  lpWord(el) {
+    const set = S.study.sets.find((x) => x.id === S.lp.id);
+    const c = set.material.cloze[S.lp.i];
+    const fills = [...(S.lp.fills || [])];
+    const k = c.gaps.findIndex((_, j) => !fills[j]);
+    if (k < 0) return;
+    fills[k] = el.dataset.v;
+    S.lp.fills = fills;
+    haptic(5);
+    render();
+  },
+  lpGap(el) {
+    const fills = [...(S.lp.fills || [])];
+    fills[Number(el.dataset.v)] = null;
+    S.lp.fills = fills;
+    render();
+  },
+  lpCheck() {
+    const set = S.study.sets.find((x) => x.id === S.lp.id);
+    const c = set.material.cloze[S.lp.i];
+    S.lp.checked = true;
+    const ok = c.gaps.every((g, k) => LN.same(S.lp.fills[k], g));
+    if (ok) { S.lp.right++; haptic(10); } else haptic(25);
+    render();
+  },
+  lpNext() {
+    const set = S.study.sets.find((x) => x.id === S.lp.id);
+    const list = S.lp.stage === 'cloze' ? set.material.cloze : set.material.quiz;
+    S.lp = { ...S.lp, i: S.lp.i + 1, pick: null, fills: [], checked: false };
+    if (S.lp.i >= list.length) {
+      const pct = Math.round((S.lp.right / list.length) * 100);
+      const p = ST.progress(set.id);
+      const path = LN.pathOf(set.id);
+      path[S.lp.stage] = Math.max(path[S.lp.stage] ?? 0, pct);
+      p.path = path;
+      ST.saveProgress(set.id, p);
+      if (pct >= LN.PASS) setTimeout(() => confetti({ y: 0.45, count: 110 }), 150);
+    }
+    render();
+    window.scrollTo(0, 0);
+  },
+  lpGo(el) { S.lp.i = Number(el.dataset.v); S.learn.ei = S.lp.i; render(); window.scrollTo(0, 0); },
+  lpCheckApply() { S.learn.ei = S.lp.i; return actions.examCheck(); },
 
   // ---------- 1.7: Lernen, Teilen, Kalender, Countdown ----------
   async examStudy(el) {
