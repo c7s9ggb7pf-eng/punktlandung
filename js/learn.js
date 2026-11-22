@@ -1,12 +1,13 @@
-// Punktlandung – Lernseite wie ein Trainingsplan: Lernzettel → 1. Multiple Choice → 2. Lückentext → 3. Anwenden → Abgabe.
+// Punktlandung – Lernseite wie ein Trainingsplan: Übersicht → Lernzettel → 1. Multiple Choice → 2. Lückentext → 3. Anwenden → Abgabe.
 // Jede Stufe ist eine Aufgabenkarte mit Zeit und Anleitung; beim Anwenden gibt es Timer, Wortzähler und eine
 // Checkliste, die sich beim Schreiben selbst abhakt. Fortschritt nur auf dem Handy.
 import { esc, icon, hue, haptic } from './ui.js';
-import { daysFromToday } from './lib.js';
+import { daysFromToday, today } from './lib.js';
 import { progress, saveProgress } from './study.js';
-import { sheetHtml } from './plan.js';
+import { sheetHtml, reminderRow } from './plan.js';
+import { PASS, isUnlocked, wordBank, same, roundOrder, minutesOf, wordsOf, countWords, checklistOf, checkState } from './learnlogic.js';
+export { PASS, wordBank, same, minutesOf, wordsOf, countWords, checklistOf, checkState };
 
-export const PASS = 70;
 export const STAGES = [
   ['mc', 'Multiple Choice', 'Wissen prüfen'],
   ['cloze', 'Lückentext', 'Begriffe sicher einsetzen'],
@@ -14,70 +15,59 @@ export const STAGES = [
 ];
 
 const short = (s) => String(s || '').replace(/\s+(LK|GK|ZK)$/i, '');
-export const pathOf = (id) => ({ mc: null, cloze: null, apply: {}, ...(progress(id).path || {}) });
-
-export function unlocked(id, stage) {
-  const p = pathOf(id);
-  if (stage === 'cloze') return (p.mc ?? 0) >= PASS;
-  if (stage === 'apply') return (p.cloze ?? 0) >= PASS;
-  return true; // Lernzettel, Multiple Choice, Abgabe
+export const pathOf = (id) => ({ mc: null, cloze: null, apply: {}, wrong: {}, ...(progress(id).path || {}) });
+function savePath(id, patch) {
+  const p = progress(id);
+  p.path = { ...pathOf(id), ...patch };
+  saveProgress(id, p);
 }
+
+export const unlocked = (s, stage) => isUnlocked(s.material, pathOf(s.id), stage);
+/** Erste noch unbeantwortete Klausuraufgabe. */
+export function firstOpen(s) {
+  const a = progress(s.id).answers;
+  return Math.max(0, (s.material.questions || []).findIndex((_, i) => countWords(a?.[i]) < 20));
+}
+const submittedToday = (p) => !!p.submitted && new Date(p.submitted).toDateString() === new Date().toDateString();
 
 /** Kann die Lernseite für dieses Set geöffnet werden? */
 export const hasPath = (s) => !!(s?.material && (s.material.quiz?.length || s.material.cloze?.length || s.material.questions?.length));
 
-/** Wortauswahl für einen Lückentext: Lösungen + Ablenker, stabil gemischt. */
-export function wordBank(c, seed) {
-  const words = [...c.gaps, ...(c.distractors || [])];
-  let x = seed * 9301 + 49297;
-  const rnd = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
-  for (let i = words.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [words[i], words[j]] = [words[j], words[i]]; }
-  return words;
+// ---------- Runden: erst alle Fragen, dann die falschen noch einmal ----------
+
+const itemsOf = (s, stage) => (stage === 'cloze' ? s.material.cloze : s.material.quiz) || [];
+
+/** Neue Runde starten (Multiple Choice oder Lückentext): Fehler vom letzten Mal zuerst. */
+export function startRound(S, s, stage) {
+  const n = itemsOf(s, stage).length;
+  S.lp = { ...S.lp, stage, i: 0, pick: null, fills: [], checked: false, focus: false,
+    order: roundOrder(n, pathOf(s.id).wrong?.[stage] || []), phase: 'first', right: 0, wrong: [], wrong2: [], pct: null };
 }
-export const same = (a, b) => String(a || '').trim().toLowerCase().replace(/\s+/g, ' ') === String(b || '').trim().toLowerCase().replace(/\s+/g, ' ');
+export const curItem = (S) => S.lp.order?.[S.lp.i] ?? S.lp.i;
 
-// ---------- Anwenden: Zeit, Wörter, Checkliste ----------
-
-const OP_MIN = { nennen: 6, beschreiben: 10, erläutern: 15, erklären: 15, analysieren: 20, vergleichen: 20, beurteilen: 20, bewerten: 20, erörtern: 25, diskutieren: 25 };
-export const minutesOf = (q) => q.minutes || OP_MIN[String(q.operator || '').toLowerCase()] || 15;
-export const wordsOf = (q) => q.words || Math.round(minutesOf(q) * 7 / 10) * 10;
-export const countWords = (t) => (String(t || '').match(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu) || []).length;
-const norm = (t) => String(t || '').toLowerCase().normalize('NFC');
-const STOP = new Set(['zwischen', 'werden', 'wird', 'durch', 'einer', 'eines', 'nicht', 'sowie', 'damit', 'deshalb', 'weniger', 'mehr', 'immer', 'bezug', 'beispiel']);
-
-const OP_CHECK = {
-  erörtern: ['Eigenes begründetes Fazit', ['fazit', 'abschließend', 'insgesamt', 'meiner meinung', 'überwieg', 'daher bin ich']],
-  diskutieren: ['Eigenes begründetes Fazit', ['fazit', 'abschließend', 'insgesamt', 'meiner meinung', 'überwieg']],
-  beurteilen: ['Begründetes Urteil', ['fazit', 'insgesamt', 'daher', 'somit', 'meiner meinung']],
-  vergleichen: ['Gemeinsamkeiten und Unterschiede verknüpft', ['im gegensatz', 'während', 'dagegen', 'hingegen', 'beide', 'gemeinsam', 'ebenso']],
-  analysieren: ['Zusammenhänge mit Folgen erklärt', ['dadurch', 'führt zu', 'somit', 'folglich', '→', 'weil', 'sodass']],
-  erläutern: ['Mit Beispiel oder Begründung veranschaulicht', ['z. b.', 'z.b.', 'zum beispiel', 'beispielsweise', 'etwa', 'weil', 'da ']],
-};
-
-/** Checkliste einer Aufgabe: eigene Punkte (q.checks) oder aus dem Erwartungshorizont abgeleitet, plus Form. */
-export function checklistOf(q) {
-  let items = Array.isArray(q.checks) && q.checks.length
-    ? q.checks.map((c) => ({ label: c.label, any: (c.any || []).map(norm) }))
-    : String(q.expectation || '').split(/;|\n/).map((x) => x.trim()).filter((x) => x.length > 6).slice(0, 7).map((seg) => {
-      const words = (seg.match(/[\p{L}-]{6,}/gu) || []).map(norm).filter((w) => !STOP.has(w));
-      const keys = [...new Set(words)].sort((a, b) => b.length - a.length).slice(0, 3).map((w) => w.slice(0, Math.max(6, w.length - 3)));
-      const label = seg.replace(/^[^:]{1,30}:\s*/, (m) => m).slice(0, 90) + (seg.length > 90 ? ' …' : '');
-      return { label, any: keys };
-    }).filter((x) => x.any.length);
-  const op = OP_CHECK[String(q.operator || '').toLowerCase()];
-  if (op) items.push({ label: op[0], any: op[1] });
-  const w = wordsOf(q);
-  items.push({ label: `mindestens ${w} Wörter`, words: w });
-  if (w >= 120) items.push({ label: 'Absätze (Leerzeile dazwischen)', paras: 2 });
-  return items;
+/** Antwort werten: in der ersten Runde zählt sie für die Prozente, Fehler kommen in die Wiederholung. */
+export function record(S, ok) {
+  const LP = S.lp;
+  if (LP.phase === 'first') { if (ok) LP.right++; else LP.wrong.push(curItem(S)); }
+  else if (!ok) LP.wrong2.push(curItem(S));
 }
 
-export function checkState(q, text) {
-  const t = norm(text);
-  return checklistOf(q).map((c) => ({
-    ...c,
-    ok: c.words ? countWords(text) >= c.words : c.paras ? String(text || '').trim().split(/\n\s*\n/).filter((x) => x.trim()).length >= c.paras : c.any.some((k) => t.includes(k)),
-  }));
+/** Zur nächsten Frage; am Rundenende speichern und ggf. die Wiederholung starten. Gibt 'retry' | 'done' | null zurück. */
+export function nextItem(S, s) {
+  const LP = S.lp;
+  Object.assign(LP, { i: LP.i + 1, pick: null, fills: [], checked: false });
+  if (LP.i < LP.order.length) return null;
+  const n = itemsOf(s, LP.stage).length;
+  const path = pathOf(s.id);
+  if (LP.phase === 'first') {
+    LP.pct = Math.round((LP.right / Math.max(1, n)) * 100);
+    savePath(s.id, { [LP.stage]: Math.max(path[LP.stage] ?? 0, LP.pct), wrong: { ...path.wrong, [LP.stage]: LP.wrong } });
+    if (LP.wrong.length) { Object.assign(LP, { phase: 'retry', order: [...LP.wrong], i: 0 }); return 'retry'; }
+  } else {
+    savePath(s.id, { wrong: { ...path.wrong, [LP.stage]: LP.wrong2 } });
+  }
+  LP.phase = 'done';
+  return 'done';
 }
 
 function checklistHtml(q, text) {
@@ -123,20 +113,28 @@ export function startTicker(S) {
 
 // ---------- Seite ----------
 
+const mcMin = (m) => Math.max(5, Math.round((m.quiz?.length || 0) * 0.7));
+const clozeMin = (m) => Math.max(4, m.cloze?.length || 0);
 const steps = (s) => {
   const m = s.material;
   const p = pathOf(s.id);
   const pr = progress(s.id);
   const nq = m.questions?.length || 0;
   const answered = (m.questions || []).filter((_, i) => countWords(pr.answers?.[i]) >= 20).length;
-  return [
-    { k: 'sheet', n: '·', label: 'Lernzettel', min: 10, v: p.sheet ? '✓' : '' },
-    { k: 'mc', n: 1, label: 'Multiple Choice', min: Math.max(5, Math.round((m.quiz?.length || 0) * 0.7)), v: p.mc == null ? '' : p.mc >= PASS ? '✓' : `${p.mc} %` },
-    { k: 'cloze', n: 2, label: 'Lückentext', min: Math.max(4, m.cloze?.length || 0), v: p.cloze == null ? '' : p.cloze >= PASS ? '✓' : `${p.cloze} %` },
-    { k: 'apply', n: 3, label: 'Anwenden', min: minutesOf(m.questions?.[0] || {}), v: nq ? (answered >= nq ? '✓' : `${answered}/${nq}`) : '' },
-    { k: 'done', n: '·', label: 'Abgabe', min: 0, v: p.submitted ? '✓' : '' },
+  const score = (v) => (v == null ? '' : v >= PASS ? '✓' : `${v} %`);
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const list = [
+    { k: 'today', n: '·', label: 'Übersicht', min: 0, v: '' },
+    { k: 'sheet', n: '·', label: 'Lernzettel', min: 10, v: p.sheet ? '✓' : '', what: 'einmal lesen' },
+    { k: 'mc', n: 1, label: 'Multiple Choice', min: mcMin(m), v: score(p.mc), size: m.quiz?.length, what: count(m.quiz?.length, 'Frage', 'Fragen') },
+    { k: 'cloze', n: 2, label: 'Lückentext', min: clozeMin(m), v: score(p.cloze), size: m.cloze?.length, what: count(m.cloze?.length, 'Text', 'Texte') },
+    { k: 'apply', n: 3, label: 'Anwenden', min: minutesOf(m.questions?.[firstOpen(s)] || {}), v: answered >= nq ? '✓' : `${answered}/${nq}`, size: nq, what: '1 Klausuraufgabe' },
+    { k: 'done', n: '·', label: 'Abgabe', min: 0, v: submittedToday(p) ? '✓' : '' },
   ];
+  return list.filter((st) => !('size' in st) || st.size);
 };
+/** Der nächste noch offene Schritt (für „Los“). */
+export const nextStep = (s) => steps(s).find((st) => !['today', 'done'].includes(st.k) && st.v !== '✓' && unlocked(s, st.k))?.k || 'done';
 
 export function learnPage(S, s) {
   const LP = S.lp;
@@ -147,11 +145,11 @@ export function learnPage(S, s) {
   const m = s.material;
   const days = s.examDate ? daysFromToday(s.examDate) : null;
   const list = steps(s).map((st) => {
-    const open = unlocked(s.id, st.k);
+    const open = unlocked(s, st.k);
     return `<button class="lp-st ${LP.stage === st.k ? 'on' : ''} ${open ? '' : 'locked'} ${st.v === '✓' ? 'ok' : ''}" data-act="lpStage" data-v="${st.k}" data-step="${st.k}">
       <span class="lp-st-n">${open ? st.n : icon('lock')}</span><span class="lp-st-l">${st.label}</span><span class="lp-st-v">${esc(st.v)}</span></button>`;
   }).join('');
-  const body = LP.stage === 'sheet' ? sheetStage(S, s) : LP.stage === 'cloze' ? clozeStage(S, s) : LP.stage === 'apply' ? applyStage(S, s) : LP.stage === 'done' ? doneStage(S, s) : mcStage(S, s);
+  const body = LP.stage === 'today' ? todayStage(S, s) : LP.stage === 'sheet' ? sheetStage(S, s) : LP.stage === 'cloze' ? clozeStage(S, s) : LP.stage === 'apply' ? applyStage(S, s) : LP.stage === 'done' ? doneStage(S, s) : mcStage(S, s);
   const side = LP.side && LP.stage !== 'sheet' ? `<aside class="lp-side">${s.sheet ? sheetHtml(s.sheet, s) : summaryHtml(s)}</aside>` : '';
   return `<main class="screen learn-page lp2 ${side ? 'with-side' : ''} ${LP.focus && LP.stage === 'apply' ? 'focus' : ''}" style="--h:${hue(s.su, s.subject)}">
     <header class="lp-top">
@@ -163,7 +161,7 @@ export function learnPage(S, s) {
       </span>
     </header>
     <div class="lp-grid">
-      <nav class="lp-steps-nav"><small class="lp-kicker">Heute</small>${list}</nav>
+      <nav class="lp-steps-nav"><small class="lp-kicker">Dein Lernweg</small>${list}</nav>
       <section class="lp-card">${body}</section>
       ${side}
     </div>
@@ -181,53 +179,83 @@ function summaryHtml(s) {
     ${(sum.sections || []).map((x) => `<section class="lz-sec"><b>${esc(x.title)}</b><ul>${x.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></section>`).join('')}</div>`;
 }
 
+function todayStage(S, s) {
+  const list = steps(s).filter((st) => !['today', 'done'].includes(st.k));
+  const open = list.filter((st) => st.v !== '✓');
+  const total = open.reduce((n, st) => n + st.min, 0);
+  const next = nextStep(s);
+  const wrong = pathOf(s.id).wrong || {};
+  const back = (wrong.mc?.length || 0) + (wrong.cloze?.length || 0);
+  const days = s.examDate ? daysFromToday(s.examDate) : null;
+  const label = steps(s).find((st) => st.k === next)?.label || 'Abgabe';
+  return `${cardHead('·', 'Heute', 0, open.length
+    ? `Noch <b>ca. ${total} Minuten</b>${days != null && days >= 0 ? ` · ${days === 0 ? 'Klausur heute' : days === 1 ? 'Klausur morgen' : `Klausur in ${days} Tagen`}` : ''}. Du arbeitest die Schritte der Reihe nach ab – die App führt dich.`
+    : 'Alles erledigt – stark! Gib ab oder wiederhol einzelne Schritte.')}
+    <ol class="lp-plan">${list.map((st) => `<li class="${st.v === '✓' ? 'ok' : ''} ${st.k === next ? 'now' : ''}">
+      <button data-act="lpStage" data-v="${st.k}" ${unlocked(s, st.k) ? '' : 'disabled'}>
+        <span class="lp-plan-n">${st.v === '✓' ? icon('check') : unlocked(s, st.k) ? st.n : icon('lock')}</span>
+        <span class="lp-plan-l"><b>${st.label}</b><small>${esc(st.what)} · ${st.min} Min.${st.v && st.v !== '✓' ? ` · ${esc(st.v)}` : ''}</small></span>
+      </button></li>`).join('')}</ol>
+    ${back ? `<p class="lp-hint">${back} ${back === 1 ? 'Frage saß' : 'Fragen saßen'} beim letzten Mal noch nicht – die ${back === 1 ? 'kommt' : 'kommen'} zuerst dran.</p>` : ''}
+    <button class="btn" data-act="lpStage" data-v="${next}">${next === 'done' ? 'Zur Abgabe' : `Los – ${esc(label)}`}</button>`;
+}
+
 function sheetStage(S, s) {
   return `${cardHead('·', 'Lernzettel', 10, 'Lies den Lernzettel einmal ganz durch. Markier dir im Kopf, was du noch nicht sicher kannst – genau das kommt gleich in den Fragen.')}
     ${s.sheet ? sheetHtml(s.sheet, s) : summaryHtml(s)}
-    <button class="btn" data-act="lpSheetDone">${icon('check')}Gelesen – weiter zu Multiple Choice</button>`;
+    <button class="btn" data-act="lpSheetDone">${icon('check')}Gelesen – weiter</button>
+    ${s.sheet ? `<button class="btn soft" data-act="sheetPrint">${icon('share')}Drucken oder als PDF sichern</button>` : ''}`;
 }
 
 function bar(i, n) {
   return `<div class="cards-top"><span>${Math.min(i + 1, n)} / ${n}</span><span>${Math.round((i / Math.max(1, n)) * 100)} %</span></div><div class="pbar"><i style="width:${(i / Math.max(1, n)) * 100}%"></i></div>`;
 }
 
-function finish(S, s, stage, pct, total, right) {
-  const next = stage === 'mc' ? 'cloze' : stage === 'cloze' ? 'apply' : null;
-  const passed = pct >= PASS;
+function finish(S, s, stage) {
+  const LP = S.lp;
+  const total = itemsOf(s, stage).length;
+  const next = stage === 'mc' && s.material.cloze?.length ? 'cloze' : s.material.questions?.length ? 'apply' : 'done';
+  const passed = LP.pct >= PASS;
+  const retried = LP.wrong.length;
+  const still = LP.wrong2.length;
+  const nextName = STAGES.find(([k]) => k === next)?.[1] || 'Abgabe';
   return `<div class="learn-done lp-done ${passed ? 'ok' : ''}">
-    <div class="lp-score">${pct}<small>%</small></div>
-    <b>${right} von ${total} richtig</b>
-    <span>${passed ? (next ? `Stark! „${STAGES.find(([k]) => k === next)[1]}“ ist jetzt frei.` : 'Geschafft!') : `Für die nächste Stufe brauchst du ${PASS} %. Schau dir die Erklärungen an und versuch es noch mal.`}</span>
-    ${passed && next ? `<button class="btn" data-act="lpStage" data-v="${next}">Weiter zu: ${STAGES.find(([k]) => k === next)[1]}</button>` : ''}
-    <button class="btn ${passed && next ? 'soft' : ''}" data-act="lpRestart">Noch mal üben</button>
+    <div class="lp-score">${LP.pct}<small>%</small></div>
+    <b>${LP.right} von ${total} beim ersten Versuch richtig</b>
+    ${retried ? `<span>In der Wiederholung: ${retried - still} von ${retried} richtig.${still ? ` ${still === 1 ? 'Die eine kommt' : `Die ${still} kommen`} beim nächsten Mal zuerst.` : ''}</span>` : ''}
+    <span>${passed ? `Stark! „${nextName}“ ist frei.` : `Für „${nextName}“ brauchst du ${PASS} %. Noch eine Runde – die Fehler kommen zuerst.`}</span>
+    ${passed ? `<button class="btn" data-act="lpStage" data-v="${next}">Weiter: ${nextName}</button>` : ''}
+    <button class="btn ${passed ? 'soft' : ''}" data-act="lpRestart">Noch eine Runde</button>
   </div>`;
 }
+
+const retryNote = (S) => (S.lp.phase === 'retry' ? `<p class="lp-retry">Wiederholung · ${S.lp.order.length === 1 ? 'Diese Frage saß' : `Diese ${S.lp.order.length} Fragen saßen`} noch nicht</p>` : '');
 
 function mcStage(S, s) {
   const LP = S.lp;
   const quiz = s.material.quiz || [];
-  const head = cardHead(1, 'Multiple Choice', Math.max(5, Math.round(quiz.length * 0.7)), `Beantworte alle ${quiz.length} Fragen. Nach jeder Antwort siehst du die Erklärung. Ab ${PASS} % ist der Lückentext frei.`);
+  const head = cardHead(1, 'Multiple Choice', mcMin(s.material), `Beantworte alle ${quiz.length} Fragen. Nach jeder Antwort siehst du die Erklärung. Ab ${PASS} % ist der Lückentext frei.`);
   if (!quiz.length) return head + '<p class="muted">Keine Multiple-Choice-Fragen vorhanden.</p>';
-  if (LP.i >= quiz.length) return head + finish(S, s, 'mc', Math.round((LP.right / quiz.length) * 100), quiz.length, LP.right);
-  const q = quiz[LP.i];
+  if (LP.phase === 'done') return head + finish(S, s, 'mc');
+  const q = quiz[curItem(S)];
   const picked = LP.pick;
-  return `${head}${bar(LP.i, quiz.length)}
+  return `${head}${retryNote(S)}${bar(LP.i, LP.order.length)}
     <p class="quiz-q">${esc(q.question)}</p>
     <div class="quiz-opts">${q.options.map((o, i) => {
       const cls = picked == null ? '' : i === q.correct ? 'right' : i === picked ? 'wrong' : 'dim';
       return `<button class="qopt ${cls}" data-act="lpPick" data-v="${i}" ${picked != null ? 'disabled' : ''}><span>${'ABCD'[i] || i + 1}</span>${esc(o)}</button>`;
     }).join('')}</div>
     ${picked != null ? `<p class="quiz-exp ${picked === q.correct ? 'ok' : 'bad'}"><b>${picked === q.correct ? 'Richtig!' : 'Leider falsch.'}</b> ${esc(q.explanation)}</p>
-      <button class="btn" data-act="lpNext">${LP.i + 1 < quiz.length ? 'Weiter' : 'Ergebnis'}</button>` : ''}`;
+      <button class="btn" data-act="lpNext">${LP.i + 1 < LP.order.length ? 'Weiter' : LP.phase === 'first' && LP.wrong.length ? 'Fehler wiederholen' : 'Ergebnis'}</button>` : ''}`;
 }
 
 function clozeStage(S, s) {
   const LP = S.lp;
   const list = s.material.cloze || [];
-  const head = cardHead(2, 'Lückentext', Math.max(4, list.length), 'Tippe die Wörter in der richtigen Reihenfolge an. Ein Wort in der Lücke tippst du an, um es wieder herauszunehmen. Achtung: Es sind falsche Wörter dabei.');
+  const head = cardHead(2, 'Lückentext', clozeMin(s.material), 'Tippe die Wörter in der richtigen Reihenfolge an. Ein Wort in der Lücke tippst du an, um es wieder herauszunehmen. Achtung: Es sind falsche Wörter dabei.');
   if (!list.length) return head + '<p class="muted">Für dieses Material gibt es noch keine Lückentexte.</p>';
-  if (LP.i >= list.length) return head + finish(S, s, 'cloze', Math.round((LP.right / list.length) * 100), list.length, LP.right);
-  const c = list[LP.i];
+  if (LP.phase === 'done') return head + finish(S, s, 'cloze');
+  const c = list[curItem(S)];
   const parts = c.text.split(/_{3,}/);
   const fills = LP.fills || [];
   const checked = LP.checked;
@@ -241,7 +269,7 @@ function clozeStage(S, s) {
     }
   });
   const used = new Set();
-  const bank = wordBank(c, LP.i + 1).map((w) => {
+  const bank = wordBank(c, curItem(S) + 1).map((w) => {
     const n = fills.findIndex((f, j) => f === w && !used.has(j));
     const isUsed = n >= 0;
     if (isUsed) used.add(n);
@@ -249,11 +277,11 @@ function clozeStage(S, s) {
   }).join('');
   const full = fills.filter(Boolean).length === c.gaps.length;
   const allRight = checked && c.gaps.every((g, k) => same(fills[k], g));
-  return `${head}${bar(LP.i, list.length)}
+  return `${head}${retryNote(S)}${bar(LP.i, LP.order.length)}
     <p class="cloze-text">${html}</p>
     <div class="chips word-bank">${bank}</div>
     ${checked ? `<p class="quiz-exp ${allRight ? 'ok' : 'bad'}"><b>${allRight ? 'Richtig!' : `Richtig wäre: ${c.gaps.map(esc).join(' · ')}`}</b> ${esc(c.explanation)}</p>
-      <button class="btn" data-act="lpNext">${LP.i + 1 < list.length ? 'Weiter' : 'Ergebnis'}</button>`
+      <button class="btn" data-act="lpNext">${LP.i + 1 < LP.order.length ? 'Weiter' : LP.phase === 'first' && LP.wrong.length ? 'Fehler wiederholen' : 'Ergebnis'}</button>`
       : `<button class="btn" data-act="lpCheck" ${full ? '' : 'disabled'}>Prüfen</button>`}`;
 }
 
@@ -335,7 +363,8 @@ function doneStage(S, s) {
       <li><span>Lückentext</span><b>${p.cloze == null ? 'noch offen' : `${p.cloze} %`}</b></li>
       ${rows}
     </ul>
-    <button class="btn" data-act="lpSubmit">${icon('check')}${p.submitted ? 'Erneut abgeben' : 'Für heute abgeben'}</button>
+    <button class="btn" data-act="lpSubmit">${icon('check')}${submittedToday(p) ? 'Erneut abgeben' : 'Für heute abgeben'}</button>
+    ${s.plan ? reminderRow(s) : ''}
     ${p.submitted ? `<p class="lp-hint">Zuletzt abgegeben: ${esc(new Date(p.submitted).toLocaleString('de-DE', { weekday: 'short', hour: '2-digit', minute: '2-digit' }))}</p>` : ''}`;
 }
 
@@ -343,11 +372,10 @@ function doneStage(S, s) {
 export function startCard(S, s) {
   if (!hasPath(s)) return '';
   const p = pathOf(s.id);
-  const next = !unlocked(s.id, 'cloze') ? 0 : !unlocked(s.id, 'apply') ? 1 : 2;
+  const next = !unlocked(s, 'cloze') ? 0 : !unlocked(s, 'apply') ? 1 : 2;
   return `<button class="lp-start" data-act="lpOpen" data-v="${esc(s.id)}">
     <span class="lp-steps">${STAGES.map(([k, l], n) => `<i class="${n < next ? 'done' : n === next ? 'now' : ''}">${n < next ? '✓' : n + 1}</i>`).join('<em></em>')}</span>
     <b>${next === 0 && p.mc == null ? 'Lernen starten' : 'Weiterlernen'}</b>
     <small>Lernzettel → Multiple Choice → Lückentext → Anwenden</small></button>`;
 }
 
-export { saveProgress };

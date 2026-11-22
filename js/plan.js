@@ -120,7 +120,6 @@ export function todayView(S, s, L) {
   const res = p.dayResults?.[d.date];
   const t = today();
   const strip = days.map((x, k) => `<button class="day-dot ${plan.done?.[x.date] ? 'done' : ''} ${x.date === t ? 'today' : ''} ${k === i ? 'on' : ''}" data-act="dayPick" data-v="${x.date}" aria-label="Tag ${k + 1}">${k + 1}</button>`).join('');
-  const hour = s.remindHour ?? 17;
   return `<div class="day-strip">${strip}</div>
     <div class="cards-top"><span>Tag ${i + 1} von ${days.length} · ${esc(d.date === t ? 'heute' : dayWord(d.date))}</span><span>${doneN} erledigt</span></div>
     <div class="pbar"><i style="width:${(doneN / Math.max(1, days.length)) * 100}%"></i></div>
@@ -138,9 +137,15 @@ export function todayView(S, s, L) {
         ${res.tip ? `<p class="er-tip">${icon('spark')}${esc(res.tip)}</p>` : ''}</div>` : ''}
       <details class="expect"><summary>Erwartungshorizont zeigen</summary><p>${esc(d.task.expectation)}</p></details></div>` : ''}
     <button class="btn ${done ? 'soft' : ''}" data-act="dayDone" data-v="${d.date}" data-done="${done ? '0' : '1'}">${icon('check')}${done ? 'Erledigt – rückgängig machen' : plan.local ? 'Heute gelernt' : 'Übung erledigt'}</button>
-    ${plan.local ? '' : `<label class="row remind-row"><span class="label">Tägliche Erinnerung<small>Push an jedem Übungstag, bis du sie erledigt hast</small></span>
+    ${plan.local ? '' : reminderRow(s)}`;
+}
+
+/** Tägliche Erinnerung an die Übung (Tagesplan und Abgabe der Lernseite). */
+export function reminderRow(s) {
+  const hour = s.remindHour ?? 17;
+  return `<label class="row remind-row"><span class="label">Tägliche Erinnerung<small>Push an jedem Übungstag, bis du sie erledigt hast</small></span>
       <select class="input inline" data-in="remindHour">${[[-1, 'aus'], [7, '7 Uhr'], [13, '13 Uhr'], [15, '15 Uhr'], [16, '16 Uhr'], [17, '17 Uhr'], [18, '18 Uhr'], [19, '19 Uhr'], [20, '20 Uhr']]
-        .map(([h, l]) => `<option value="${h}" ${hour === h ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`}`;
+        .map(([h, l]) => `<option value="${h}" ${hour === h ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
 }
 
 /** Ansicht „Lernzettel“. */

@@ -111,9 +111,9 @@ export function setSheet(S, s, V) {
     <div class="sheet-kicker">${esc(short(s.subject))}${s.examDate ? ' · ' + esc(dateLong(s.examDate)) + ' · ' + esc(examWhen(s.examDate)) : ''}</div>
     <h3 class="sheet-title"><i class="subj-dot"></i>${esc(m?.topic || s.title || 'Lernset')}</h3>
     ${LN.startCard(S, s)}
-    ${showModes ? modes(S, s, V) : ''}
     ${PL.taskBlock(S, s)}
-    ${PL.prepBlock(S, s)}
+    ${LN.hasPath(s) && !ai ? '' : PL.prepBlock(S, s)}
+    ${showModes ? `${LN.hasPath(s) ? '<h4 class="group-label">Extra: Karteikarten</h4>' : ''}${modes(S, s, V)}` : ''}
     ${ai && m && showModes ? `<button class="btn soft" data-act="chatOpen" data-set="${esc(s.id)}">${icon('spark')}Fragen zum Material stellen</button>` : ''}
     <h4 class="group-label">Material · ${s.docs.length}</h4>
     <div class="docs">${docs || '<p class="muted">Noch nichts hochgeladen. Fotografier Arbeitsblätter und Hefteinträge oder lade PDFs hoch.</p>'}</div>
@@ -130,24 +130,18 @@ export function setSheet(S, s, V) {
 function modes(S, s, V) {
   const L = S.learn;
   const m = s.material;
+  // Mit Lernseite (LN.hasPath) passiert das Lernen dort – hier bleiben nur die Karteikarten als Extra.
+  const plan = !LN.hasPath(s) && PL.planOf(s);
   const tabs = [
-    ...(PL.planOf(s) ? [['today', 'Heute']] : []),
-    ...(s.sheet ? [['sheet', 'Lernzettel']] : []),
-    ...(m ? [['over', 'Überblick'], ['cards', 'Karten'], ['quiz', 'Quiz'], ['exam', 'Prüfung'], ['edit', 'Eigene']]
-      : [['cards', PL.planOf(s) ? 'Karten' : 'Karten lernen'], ['edit', PL.planOf(s) ? 'Eigene' : 'Karten schreiben']]),
+    ...(plan ? [['today', 'Heute']] : []),
+    ...(plan && s.sheet ? [['sheet', 'Lernzettel']] : []),
+    ['cards', m || plan ? 'Karten' : 'Karten lernen'], ['edit', m || plan ? 'Eigene' : 'Karten schreiben'],
   ];
   const mode = tabs.some(([k]) => k === L.mode) ? L.mode : tabs[0][0];
   const body = mode === 'today' ? PL.todayView(S, s, L) : mode === 'sheet' ? PL.sheetView(s)
-    : mode === 'edit' ? editMode(s, L) : mode === 'cards' ? cardsMode(s, L) : mode === 'quiz' ? quizMode(s, L) : mode === 'exam' ? examMode(S, s, L) : overview(m);
+    : mode === 'edit' ? editMode(s, L) : cardsMode(s, L);
   return `<div class="seg small learn-seg">${tabs.map(([k, l]) => `<button class="${mode === k ? 'on' : ''}" data-act="learnMode" data-v="${k}">${l}</button>`).join('')}</div>
     <div class="learn">${body}</div>`;
-}
-
-function overview(m) {
-  const sum = m.summary || {};
-  return `<p class="ov-lead">${esc(sum.overview || '')}</p>
-    ${(sum.sections || []).map((sec) => `<div class="ov-sec"><b>${esc(sec.title)}</b><ul>${(sec.points || []).map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`).join('')}
-    ${(sum.keyTerms || []).length ? `<div class="ov-sec"><b>Fachbegriffe</b><dl class="terms">${sum.keyTerms.map((k) => `<div><dt>${esc(k.term)}</dt><dd>${esc(k.explanation)}</dd></div>`).join('')}</dl></div>` : ''}`;
 }
 
 /** Reihenfolge der Karten: zuerst die noch nicht gewussten. */
@@ -167,7 +161,7 @@ function cardsMode(s, L) {
   }
   const order = cardOrder(s, L.onlyOpen);
   if (!order.length) {
-    return `<div class="learn-done"><b>🎉 Alle ${cards.length} Karten gewusst!</b><span>Stark.${s.material?.quiz?.length ? ' Mach zur Sicherheit noch das Quiz.' : ' Üb sie kurz vor der Klausur noch einmal.'}</span>
+    return `<div class="learn-done"><b>🎉 Alle ${cards.length} Karten gewusst!</b><span>Stark.${LN.hasPath(s) ? ' Weiter geht’s auf der Lernseite.' : ' Üb sie kurz vor der Klausur noch einmal.'}</span>
       <button class="btn soft" data-act="cardsReset">Von vorn üben</button></div>`;
   }
   const pos = Math.min(L.ci, order.length - 1);
@@ -194,52 +188,6 @@ function editMode(s, L) {
     </form>
     ${own.length ? `<h4 class="group-label">Deine Karten · ${own.length}</h4><div class="own-cards">${own.map((c, i) => `<div class="own-card"><span><b>${esc(c.front)}</b><small>${esc(c.back)}</small></span>
       <button class="x" data-act="cardDel" data-v="${offset + i}" aria-label="Karte löschen">${icon('x')}</button></div>`).join('')}</div>` : ''}`;
-}
-
-function quizMode(s, L) {
-  const quiz = s.material.quiz || [];
-  if (!quiz.length) return '<p class="muted">Kein Quiz vorhanden.</p>';
-  if (L.qi >= quiz.length) {
-    const p = progress(s.id);
-    const pct = Math.round((L.score / quiz.length) * 100);
-    return `<div class="learn-done"><b>${L.score} von ${quiz.length} richtig (${pct} %)</b>
-      <span>${pct >= 90 ? 'Hervorragend – das sitzt.' : pct >= 70 ? 'Gut! Schau dir die Fehler noch mal in den Karten an.' : 'Da geht noch was – üb die Karten und versuch es noch mal.'}${p.best != null ? ` Dein Bestwert: ${p.best} von ${quiz.length}.` : ''}</span>
-      <button class="btn" data-act="quizRestart">Noch mal</button></div>`;
-  }
-  const q = quiz[L.qi];
-  const picked = L.pick;
-  return `<div class="cards-top"><span>Frage ${L.qi + 1} / ${quiz.length}</span><span>${L.score} richtig</span></div>
-    <div class="pbar"><i style="width:${(L.qi / quiz.length) * 100}%"></i></div>
-    <p class="quiz-q">${esc(q.question)}</p>
-    <div class="quiz-opts">${q.options.map((o, i) => {
-      const cls = picked == null ? '' : i === q.correct ? 'right' : i === picked ? 'wrong' : 'dim';
-      return `<button class="qopt ${cls}" data-act="quizPick" data-v="${i}" ${picked != null ? 'disabled' : ''}><span>${'ABCD'[i] || i + 1}</span>${esc(o)}</button>`;
-    }).join('')}</div>
-    ${picked != null ? `<p class="quiz-exp ${picked === q.correct ? 'ok' : 'bad'}"><b>${picked === q.correct ? 'Richtig!' : 'Leider falsch.'}</b> ${esc(q.explanation)}</p>
-      <button class="btn" data-act="quizNext">${L.qi + 1 < quiz.length ? 'Nächste Frage' : 'Ergebnis'}</button>` : ''}`;
-}
-
-function examMode(S, s, L) {
-  const qs = s.material.questions || [];
-  const p = progress(s.id);
-  if (L.ei == null) {
-    return `<p class="muted">Klausurfragen wie im Abitur. Schreib deine Antwort – die KI bewertet sie in Punkten und sagt dir, was fehlt.</p>
-      <div class="exam-list">${qs.map((q, i) => {
-        const r = p.results[i];
-        return `<button class="exam-q" data-act="examOpen" data-v="${i}"><span class="op">${esc(q.operator)}</span><span class="eq">${esc(q.question)}</span>${r ? `<b class="pt ${r.points >= 13 ? 'g1' : r.points >= 10 ? 'g2' : r.points >= 5 ? 'g3' : 'g4'}">${r.points}</b>` : icon('right', 'chev')}</button>`;
-      }).join('')}</div>`;
-  }
-  const q = qs[L.ei];
-  const r = p.results[L.ei];
-  return `<button class="btn link back" data-act="examBack">${icon('left')}Alle Fragen</button>
-    <p class="quiz-q"><span class="op">${esc(q.operator)}</span> ${esc(q.question)}</p>
-    <textarea class="input exam-input" data-in="examAnswer" rows="7" maxlength="6000" placeholder="Deine Antwort …">${esc(p.answers[L.ei] || '')}</textarea>
-    <button class="btn" data-act="examCheck" ${S.busy.check || !S.study?.ai ? 'disabled' : ''}>${S.busy.check ? '<span class="spin"></span>Wird bewertet …' : `${icon('spark')}Antwort bewerten lassen`}</button>
-    ${r ? `<div class="exam-res"><div class="er-top"><b class="pt big ${r.points >= 13 ? 'g1' : r.points >= 10 ? 'g2' : r.points >= 5 ? 'g3' : 'g4'}">${r.points}</b><span>${esc(r.verdict)}</span></div>
-      ${r.good?.length ? `<b class="er-h ok">Gut</b><ul>${r.good.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-      ${r.missing?.length ? `<b class="er-h bad">Fehlt noch</b><ul>${r.missing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-      ${r.tip ? `<p class="er-tip">${icon('spark')}${esc(r.tip)}</p>` : ''}</div>` : ''}
-    <details class="expect"><summary>Erwartungshorizont zeigen</summary><p>${esc(q.expectation)}</p></details>`;
 }
 
 // ---------- Datei vorbereiten (Fotos verkleinern) ----------

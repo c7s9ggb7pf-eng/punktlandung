@@ -27,7 +27,7 @@ const S = {
   add: { sid: null, hj: 0, kind: 'k' },
   study: null, // { ai, sets, loading }
   chat: { msgs: [], setId: null, title: '', grades: false, busy: false, draft: '' },
-  learn: { mode: 'over', ci: 0, flip: false, onlyOpen: false, qi: 0, pick: null, score: 0, ei: null },
+  learn: { mode: 'cards', ci: 0, flip: false, onlyOpen: false, ei: null },
   ob: { step: 'welcome', query: '', results: [], tooMany: false, searching: false, searchError: '', school: null, mode: 'password', busy: false, error: '', draft: {}, nameGuess: '' },
 };
 window.__pl = S; // für die Fehlersuche
@@ -494,6 +494,12 @@ async function saveTask(v, delay = 0) {
 }
 
 const curSet = () => S.study?.sets?.find((x) => x.id === S._studyOpen);
+const lpSet = () => S.study?.sets?.find((x) => x.id === S.lp?.id);
+function lpSavePath(patch) {
+  const p = ST.progress(S.lp.id);
+  p.path = { ...LN.pathOf(S.lp.id), ...patch };
+  ST.saveProgress(S.lp.id, p);
+}
 function refreshSetSheet() {
   if (S._studyOpen && document.querySelector('.study-sheet')) updateSheet(ST.setSheet(S, curSet(), V));
 }
@@ -541,7 +547,7 @@ function pollStudy() {
     }
   }, 4000);
 }
-const learnReset = () => { S.learn = { mode: S.learn.mode || 'over', ci: 0, flip: false, onlyOpen: false, qi: 0, pick: null, score: 0, ei: null, pd: null }; };
+const learnReset = () => { S.learn = { mode: S.learn.mode || 'cards', ci: 0, flip: false, onlyOpen: false, ei: null, pd: null }; };
 
 function saveGrades() {
   if (!S.demo) store.grades = S.grades;
@@ -900,7 +906,7 @@ const actions = {
     S._studyDel = null;
     learnReset();
     const set0 = curSet();
-    S.learn.mode = PL.planOf(set0) ? 'today' : set0?.material ? 'over' : ST.cardsOf(set0).length ? 'cards' : 'edit';
+    S.learn.mode = PL.planOf(set0) ? 'today' : set0?.material ? 'cards' : ST.cardsOf(set0).length ? 'cards' : 'edit';
     openSheet(ST.setSheet(S, curSet(), V), { onClose: () => { S._studyOpen = null; if (S.tab === 'aufgaben') render(); } });
     autoPrep(set0);
   },
@@ -1085,28 +1091,6 @@ const actions = {
     S.learn.flip = false;
     refreshSetSheet();
   },
-  quizPick(el) {
-    if (S.learn.pick != null) return;
-    const q = curSet().material.quiz[S.learn.qi];
-    S.learn.pick = Number(el.dataset.v);
-    if (S.learn.pick === q.correct) { S.learn.score++; haptic(10); } else haptic(25);
-    refreshSetSheet();
-  },
-  quizNext() {
-    const set = curSet();
-    S.learn.qi++;
-    S.learn.pick = null;
-    if (S.learn.qi >= set.material.quiz.length) {
-      const p = ST.progress(set.id);
-      p.best = Math.max(p.best ?? 0, S.learn.score);
-      ST.saveProgress(set.id, p);
-      if (S.learn.score === set.material.quiz.length) setTimeout(() => confetti({ y: 0.5, count: 110 }), 150);
-    }
-    refreshSetSheet();
-  },
-  quizRestart() { S.learn.qi = 0; S.learn.pick = null; S.learn.score = 0; refreshSetSheet(); },
-  examOpen(el) { S.learn.ei = Number(el.dataset.v); refreshSetSheet(); },
-  examBack() { S.learn.ei = null; refreshSetSheet(); },
   async examCheck() {
     const set = curSet();
     const i = S.learn.ei;
@@ -1139,12 +1123,10 @@ const actions = {
     if (S.screen === 'learn') render();
   },
 
-  // ---------- 1.11: Lernseite (Multiple Choice → Lückentext → Anwenden) ----------
+  // ---------- Lernseite: Übersicht → Lernzettel → Multiple Choice → Lückentext → Anwenden → Abgabe ----------
   lpOpen(el) {
     const id = el.dataset.v;
-    const path = LN.pathOf(id);
-    const stage = !path.sheet && path.mc == null ? 'sheet' : !LN.unlocked(id, 'cloze') ? 'mc' : !LN.unlocked(id, 'apply') ? 'cloze' : 'apply';
-    S.lp = { id, stage, i: 0, pick: null, right: 0, fills: [], checked: false, side: false, timer: null };
+    S.lp = { id, stage: 'today', i: 0, side: false, timer: null, focus: false };
     LN.startTicker(S);
     closeSheet(true);
     S._studyOpen = id; // nach dem Schließen setzen – onClose des Blatts löscht die Markierung
@@ -1163,64 +1145,31 @@ const actions = {
   },
   lpStage(el) {
     const k = el.dataset.v;
-    if (!LN.unlocked(S.lp.id, k)) return toast(`Erst die vorige Stufe mit mindestens ${LN.PASS} % schaffen.`);
-    S.lp = { ...S.lp, stage: k, i: 0, pick: null, right: 0, fills: [], checked: false, focus: false };
-    S.learn.ei = 0;
+    if (!LN.unlocked(lpSet(), k)) return toast(`Erst die vorige Stufe mit mindestens ${LN.PASS} % schaffen.`);
+    if (k === 'mc' || k === 'cloze') LN.startRound(S, lpSet(), k);
+    else S.lp = { ...S.lp, stage: k, i: k === 'apply' ? LN.firstOpen(lpSet()) : 0, focus: false };
+    S.learn.ei = S.lp.i;
     haptic(5);
     render();
     window.scrollTo(0, 0);
   },
+  lpRestart() { return actions.lpStage({ dataset: { v: S.lp.stage } }); },
   lpSide() { S.lp.side = !S.lp.side; haptic(5); render(); },
   lpSheetDone() {
-    const p = ST.progress(S.lp.id);
-    p.path = { ...LN.pathOf(S.lp.id), sheet: true };
-    ST.saveProgress(S.lp.id, p);
-    return actions.lpStage({ dataset: { v: 'mc' } });
+    lpSavePath({ sheet: true });
+    return actions.lpStage({ dataset: { v: LN.nextStep(lpSet()) } });
   },
-  lpTimer(el) {
-    const now = Date.now();
-    S.lp.timer = { i: S.lp.i, start: now, end: now + Number(el.dataset.v) * 60000 };
-    S.lp.focus = true;
-    haptic(8);
-    render();
-    keepAwake(true);
-    const ta = document.querySelector('.exam-input');
-    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-  },
-  lpFinish() {
-    const p = ST.progress(S.lp.id);
-    const path = LN.pathOf(S.lp.id);
-    p.path = { ...path, review: { ...(path.review || {}), [S.lp.i]: true } };
-    ST.saveProgress(S.lp.id, p);
-    S.lp.focus = false;
-    S.lp.timer = null;
-    keepAwake(false);
-    document.activeElement?.blur?.();
-    haptic(10);
-    render();
-    document.querySelector('.lp-checklist')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  },
-  lpFocusOff() { document.activeElement?.blur?.(); LN.setFocus(S, false); },
-  lpSubmit() {
-    const p = ST.progress(S.lp.id);
-    p.path = { ...LN.pathOf(S.lp.id), submitted: new Date().toISOString() };
-    ST.saveProgress(S.lp.id, p);
-    setTimeout(() => confetti({ y: 0.5, count: 110 }), 100);
-    toast('Abgegeben – stark gemacht! 💪');
-    render();
-  },
-  lpRestart() { S.lp = { ...S.lp, i: 0, pick: null, right: 0, fills: [], checked: false }; render(); window.scrollTo(0, 0); },
   lpPick(el) {
     if (S.lp.pick != null) return;
-    const set = S.study.sets.find((x) => x.id === S.lp.id);
-    const q = set.material.quiz[S.lp.i];
+    const q = lpSet().material.quiz[LN.curItem(S)];
     S.lp.pick = Number(el.dataset.v);
-    if (S.lp.pick === q.correct) { S.lp.right++; haptic(10); } else haptic(25);
+    const ok = S.lp.pick === q.correct;
+    LN.record(S, ok);
+    haptic(ok ? 10 : 25);
     render();
   },
   lpWord(el) {
-    const set = S.study.sets.find((x) => x.id === S.lp.id);
-    const c = set.material.cloze[S.lp.i];
+    const c = lpSet().material.cloze[LN.curItem(S)];
     const fills = [...(S.lp.fills || [])];
     const k = c.gaps.findIndex((_, j) => !fills[j]);
     if (k < 0) return;
@@ -1236,31 +1185,55 @@ const actions = {
     render();
   },
   lpCheck() {
-    const set = S.study.sets.find((x) => x.id === S.lp.id);
-    const c = set.material.cloze[S.lp.i];
+    const c = lpSet().material.cloze[LN.curItem(S)];
     S.lp.checked = true;
     const ok = c.gaps.every((g, k) => LN.same(S.lp.fills[k], g));
-    if (ok) { S.lp.right++; haptic(10); } else haptic(25);
+    LN.record(S, ok);
+    haptic(ok ? 10 : 25);
     render();
   },
   lpNext() {
-    const set = S.study.sets.find((x) => x.id === S.lp.id);
-    const list = S.lp.stage === 'cloze' ? set.material.cloze : set.material.quiz;
-    S.lp = { ...S.lp, i: S.lp.i + 1, pick: null, fills: [], checked: false };
-    if (S.lp.i >= list.length) {
-      const pct = Math.round((S.lp.right / list.length) * 100);
-      const p = ST.progress(set.id);
-      const path = LN.pathOf(set.id);
-      path[S.lp.stage] = Math.max(path[S.lp.stage] ?? 0, pct);
-      p.path = path;
-      ST.saveProgress(set.id, p);
-      if (pct >= LN.PASS) setTimeout(() => confetti({ y: 0.45, count: 110 }), 150);
-    }
+    const r = LN.nextItem(S, lpSet());
+    if (r === 'done' && S.lp.pct >= LN.PASS) setTimeout(() => confetti({ y: 0.45, count: 110 }), 150);
     render();
     window.scrollTo(0, 0);
   },
   lpGo(el) { S.lp.focus = false; S.lp.i = Number(el.dataset.v); S.learn.ei = S.lp.i; render(); window.scrollTo(0, 0); },
+  lpTimer(el) {
+    const now = Date.now();
+    S.lp.timer = { i: S.lp.i, start: now, end: now + Number(el.dataset.v) * 60000 };
+    S.lp.focus = true;
+    haptic(8);
+    render();
+    keepAwake(true);
+    const ta = document.querySelector('.exam-input');
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  },
+  lpFinish() {
+    lpSavePath({ review: { ...(LN.pathOf(S.lp.id).review || {}), [S.lp.i]: true } });
+    S.lp.focus = false;
+    S.lp.timer = null;
+    keepAwake(false);
+    document.activeElement?.blur?.();
+    haptic(10);
+    render();
+    document.querySelector('.lp-checklist')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+  lpFocusOff() { document.activeElement?.blur?.(); LN.setFocus(S, false); },
   lpCheckApply() { S.learn.ei = S.lp.i; return actions.examCheck(); },
+  async lpSubmit() {
+    lpSavePath({ submitted: new Date().toISOString() });
+    setTimeout(() => confetti({ y: 0.5, count: 110 }), 100);
+    toast('Abgegeben – stark gemacht! 💪');
+    // Übungstag abhaken, sonst käme trotz Abgabe die Push-Erinnerung
+    const set = lpSet();
+    const date = today();
+    const open = set?.plan?.days?.some((d) => d.date === date) && !set.plan.done?.[date];
+    if (open) set.plan.done = { ...(set.plan.done || {}), [date]: true };
+    render();
+    if (!open || S.demo) return;
+    try { setStudy(await api('studyDay', { id: set.id, date, done: true })); } catch (e) { toast(e.message); }
+  },
 
   // ---------- 1.7: Lernen, Teilen, Kalender, Countdown ----------
   async examStudy(el) {

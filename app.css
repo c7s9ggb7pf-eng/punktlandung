@@ -1067,10 +1067,6 @@ html.scrolled body::after { opacity: 1; }
 .gen-err { margin: 8px 2px; color: var(--coral); font-size: 14px; }
 .learn-seg { margin: 12px 0 10px; }
 .learn { margin-bottom: 6px; }
-.ov-lead { font-size: 15px; line-height: 1.55; margin: 4px 2px 12px; }
-.ov-sec { margin: 0 0 12px; padding: 12px 14px; border-radius: 16px; background: var(--card-2); }
-.ov-sec b { display: block; margin-bottom: 4px; }
-.ov-sec ul { margin: 0; padding-left: 18px; line-height: 1.5; font-size: 14.5px; }
 .terms { margin: 0; display: grid; gap: 8px; }
 .terms dt { font-weight: 750; font-size: 14px; }
 .terms dd { margin: 1px 0 0; color: var(--text-2); font-size: 14px; }
@@ -1101,9 +1097,6 @@ html.scrolled body::after { opacity: 1; }
 .qopt.dim { opacity: .5; }
 .quiz-exp { margin: 12px 2px; font-size: 14.5px; line-height: 1.45; }
 .quiz-exp.ok b { color: oklch(55% .15 150); } .quiz-exp.bad b { color: var(--coral); }
-.exam-list { display: grid; gap: 8px; margin-top: 10px; }
-.exam-q { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; border: 0; border-radius: 14px; background: var(--card-2); color: var(--text); text-align: left; }
-.exam-q .eq { flex: 1; font-size: 14.5px; line-height: 1.35; }
 .op { flex: none; padding: 3px 7px; border-radius: 7px; background: oklch(64% .15 var(--h) / .18); color: oklch(52% .15 var(--h)); font: 700 10.5px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
 .exam-input { min-height: 150px; margin: 4px 0 10px; font-size: 15px; line-height: 1.45; }
 .back { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 4px; padding-left: 0; }
@@ -1222,32 +1215,9 @@ label.up input[type=file], label.up-row input[type=file] { position: absolute; i
 .ai-off span { color: var(--text-2); }
 .ai-off code { font: 600 12.5px var(--mono); padding: 1px 5px; border-radius: 6px; background: var(--card-2); color: var(--text); }
 
-/* ---------- 1.11: Lernseite (Multiple Choice → Lückentext → Anwenden) ---------- */
-.learn-page { padding-top: calc(env(safe-area-inset-top) + 8px); padding-bottom: calc(env(safe-area-inset-bottom) + 40px); }
-.lp-head { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; margin-bottom: 12px; }
-.lp-title { text-align: center; min-width: 0; }
-.lp-title small { display: block; font: 650 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: oklch(55% .15 var(--h)); }
-.lp-title b { display: block; font: 800 18px/1.2 var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lp-stages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px; }
-.lp-stage { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border: 0; border-radius: 16px; background: var(--card); box-shadow: 0 0 0 1px var(--line); color: var(--text); font-weight: 650; font-size: 12.5px; text-align: center; }
-.lp-stage small { display: block; font: 600 11px var(--mono); color: var(--text-3); margin-top: 2px; }
-.lp-n { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--card-2); font: 700 12px var(--mono); }
-.lp-n .ico { width: 14px; height: 14px; }
-.lp-stage.on { box-shadow: 0 0 0 2px oklch(60% .16 var(--h)); }
-.lp-stage.on .lp-n { background: oklch(62% .16 var(--h)); color: #fff; }
-.lp-stage.locked { opacity: .5; }
-.lp-body { min-height: 50dvh; }
-.lp-done .lp-score { font: 800 54px/1 var(--display); color: oklch(58% .16 var(--h)); }
-.lp-done .lp-score small { font-size: 22px; }
-.lp-done.ok .lp-score { color: oklch(56% .15 150); }
-.cloze-text { font-size: 17px; line-height: 2.1; margin: 8px 2px 16px; }
-.gap { display: inline-block; min-width: 86px; margin: 0 3px; padding: 2px 10px; border: 0; border-bottom: 2.5px solid oklch(62% .16 var(--h)); border-radius: 8px 8px 2px 2px; background: oklch(64% .15 var(--h) / .12); color: var(--text); font: 650 16px var(--body, inherit); vertical-align: baseline; line-height: 1.5; }
-.gap.filled { background: oklch(64% .15 var(--h) / .22); }
-.gap.right { border-color: oklch(58% .15 150); background: oklch(70% .15 150 / .22); }
-.gap.wrong { border-color: var(--coral); background: color-mix(in oklab, var(--coral) 16%, transparent); text-decoration: line-through; }
-.word-bank { margin-bottom: 14px; }
-.word-bank .word { font-size: 15px; padding: 9px 14px; background: var(--card); box-shadow: 0 0 0 1.5px var(--line); color: var(--text); }
-.word-bank .word.used { opacity: .3; }
+/* ---------- Lernseite (ein Block: Grundform = Handy, größere Breiten ganz unten) ---------- */
+
+/* Einstieg im Lernset */
 .lp-start { display: grid; gap: 4px; width: 100%; margin: 12px 0 14px; padding: 16px; border: 0; border-radius: 20px; text-align: left; color: #fff;
   background: linear-gradient(125deg, oklch(60% .17 var(--h)), oklch(55% .19 calc(var(--h) + 40))); box-shadow: 0 14px 30px -18px oklch(55% .18 var(--h)); }
 .lp-start b { font: 800 19px/1.2 var(--display); }
@@ -1258,22 +1228,27 @@ label.up input[type=file], label.up-row input[type=file] { position: absolute; i
 .lp-steps i.now { box-shadow: 0 0 0 2px #fff; }
 .lp-steps em { flex: 0 0 14px; height: 2px; background: rgba(255,255,255,.4); }
 
-/* ---------- 1.12: Lernseite als Trainingsplan (Schrittliste, Aufgabenkarte, Timer, Checkliste) ---------- */
-.lp2 { max-width: 1180px; margin: 0 auto; }
-.lp-top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; margin: 0 -16px 14px; padding: calc(env(safe-area-inset-top) + 6px) 16px 10px;
-  background: color-mix(in oklab, var(--bg) 88%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
-.lp2.learn-page { padding-top: 0; }
-.lp-top .lp-title { flex: 1; text-align: left; }
-.lp-tools { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+/* Seite und Kopf */
+#app:has(.lp2) { max-width: 1180px; }
+.learn-page { padding-top: calc(env(safe-area-inset-top) + 8px); padding-bottom: calc(env(safe-area-inset-bottom) + 40px); }
+.lp2.learn-page { width: 100%; max-width: 1180px; margin: 0 auto; padding-top: 0; }
+.lp-head { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; margin-bottom: 12px; }
+.lp-top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 -16px 14px;
+  padding: calc(env(safe-area-inset-top) + 6px) 16px 10px; background: color-mix(in oklab, var(--bg) 88%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.lp-title { flex: 1; min-width: 0; text-align: left; }
+.lp-title small { display: block; font: 650 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: oklch(55% .15 var(--h)); }
+.lp-title b { display: block; font: 800 18px/1.2 var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-tools { order: 3; width: 100%; display: flex; gap: 6px; }
 .lp-pill { display: inline-flex; align-items: center; padding: 7px 11px; border-radius: 12px; background: var(--card); box-shadow: 0 0 0 1px var(--line); font: 600 12.5px var(--mono); color: var(--text-2); white-space: nowrap; }
 .btn-pill { border: 0; color: var(--text); cursor: pointer; }
 .btn-pill.on { background: oklch(62% .16 var(--h)); color: #fff; box-shadow: none; }
-.lp-grid { display: grid; gap: 14px; }
-.lp-kicker { display: block; font: 650 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
-.lp-steps-nav { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px 4px; scrollbar-width: none; }
+
+/* Aufbau: Lernweg, Aufgabe, Lernzettel daneben (am Handy darüber) */
+.lp-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.lp-kicker { display: none; font: 650 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+.lp-steps-nav { order: -2; display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px 4px; scrollbar-width: none; }
 .lp-steps-nav::-webkit-scrollbar { display: none; }
-.lp-steps-nav .lp-kicker { display: none; }
-.lp-st { flex: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 0; border-radius: 14px; background: var(--card); box-shadow: 0 0 0 1px var(--line); color: var(--text); font: 600 14px var(--body, inherit); text-align: left; cursor: pointer; }
+.lp-st { flex: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 0; border-radius: 14px; background: var(--card-2); color: var(--text); font: 600 14px var(--body, inherit); text-align: left; cursor: pointer; }
 .lp-st-n { width: 16px; font: 700 12.5px var(--mono); color: var(--text-3); text-align: center; }
 .lp-st-n .ico { width: 13px; height: 13px; }
 .lp-st-v { font: 600 12.5px var(--mono); color: var(--text-3); }
@@ -1281,102 +1256,117 @@ label.up input[type=file], label.up-row input[type=file] { position: absolute; i
 .lp-st.on { background: oklch(62% .16 var(--h) / .14); box-shadow: 0 0 0 1.5px oklch(62% .16 var(--h) / .6); }
 .lp-st.on .lp-st-n { color: oklch(58% .16 var(--h)); }
 .lp-st.locked { opacity: .45; }
-.lp-card { min-width: 0; padding: 20px 18px 22px; border-radius: 24px; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+.lp-card { min-width: 0; padding: 20px 2px 22px; }
+.lp-side { order: -1; min-width: 0; max-height: 45dvh; padding: 14px; overflow: auto; border-radius: 24px; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+
+/* Aufgabenkarte */
 .lp-ch { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 12px; }
 .lp-num { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: oklch(62% .16 var(--h) / .16); color: oklch(56% .16 var(--h)); font: 700 15px var(--mono); }
-.lp-ch h2 { margin: 2px 0 2px; font: 800 24px/1.15 var(--display); }
+.lp-ch h2 { margin: 2px 0; font: 800 21px/1.15 var(--display); }
 .lp-ch small { color: var(--text-3); font-size: 14px; }
-.lp-task { margin: 0 0 12px; font-size: 16px; line-height: 1.6; color: var(--text-2); }
+.lp-task { margin: 0 0 12px; font-size: 16px; line-height: 1.6; color: var(--text); }
 .lp-task .op { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 8px; background: oklch(62% .16 var(--h) / .16); color: oklch(52% .16 var(--h)); font: 700 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; vertical-align: 2px; }
+.lp-q { max-width: 65ch; font-size: 17px; }
 .lp-hint { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--text-3); }
-.lp-timer { margin: 6px 0 16px; font: 700 34px/1 var(--mono); letter-spacing: -.02em; }
-.lp-timer.over { color: var(--coral); }
+.lp-hint.center { margin-top: 8px; text-align: center; }
+.lp-card > .btn + .btn { margin-top: 8px; }
+
+/* Übersicht „Heute“ */
+.lp-plan { list-style: none; margin: 4px 0 16px; padding: 0; max-width: 60ch; }
+.lp-plan li + li { border-top: 1px solid var(--line); }
+.lp-plan button { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 2px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.lp-plan button:disabled { opacity: .45; cursor: default; }
+.lp-plan-n { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--card-2); color: var(--text-3); font: 700 13px var(--mono); }
+.lp-plan-n .ico { width: 15px; height: 15px; }
+.lp-plan li.now .lp-plan-n { background: oklch(62% .16 var(--h)); color: #fff; }
+.lp-plan li.ok .lp-plan-n { background: oklch(70% .16 150); color: #fff; }
+.lp-plan-l { display: grid; gap: 2px; }
+.lp-plan-l b { font-size: 16px; }
+.lp-plan-l small { color: var(--text-3); font-size: 13px; }
+
+/* Multiple Choice und Lückentext */
+.lp2 .pbar { height: 3px; border-radius: 3px; }
+.lp2 .cards-top { font-size: 12px; opacity: .7; }
+.lp2 .quiz-q { max-width: 60ch; font-size: 18px; line-height: 1.6; }
+.cloze-text { max-width: 60ch; margin: 8px 2px 16px; font-size: 18px; line-height: 2; }
+.gap { display: inline-block; min-width: 86px; max-width: 100%; margin: 0 3px; padding: 2px 10px; border: 0; border-bottom: 2.5px solid oklch(62% .16 var(--h)); border-radius: 8px 8px 2px 2px; background: oklch(64% .15 var(--h) / .12); color: var(--text); font: 650 16px var(--body, inherit); vertical-align: baseline; line-height: 1.5; }
+.gap.filled { background: oklch(64% .15 var(--h) / .22); }
+.gap.right { border-color: oklch(58% .15 150); background: oklch(70% .15 150 / .22); }
+.gap.wrong { border-color: var(--coral); background: color-mix(in oklab, var(--coral) 16%, transparent); text-decoration: line-through; }
+.word-bank { margin-bottom: 14px; }
+.word-bank .word { padding: 9px 14px; background: var(--card); box-shadow: 0 0 0 1.5px var(--line); color: var(--text); font-size: 15px; }
+.word-bank .word.used { opacity: .3; }
+.lp-retry { margin: 0 0 12px; font: 650 12.5px var(--mono); color: oklch(62% .14 70); }
+.lp-done .lp-score { font: 800 54px/1 var(--display); color: oklch(58% .16 var(--h)); }
+.lp-done .lp-score small { font-size: 22px; }
+.lp-done.ok .lp-score { color: oklch(56% .15 150); }
+
+/* Schreiben */
+.lp-paper { display: block; width: 100%; max-width: 68ch; min-height: 42dvh; margin: 8px 0 4px; padding: 16px 18px; border: 0; border-radius: 18px;
+  background: var(--card); box-shadow: 0 0 0 1px var(--line); font: 400 17px/1.75 var(--body, inherit); resize: vertical; }
+.lp-paper:focus { outline: none; box-shadow: 0 0 0 1.5px oklch(62% .16 var(--h) / .55); }
+.lp-meta { display: flex; justify-content: space-between; max-width: 68ch; margin-bottom: 14px; }
+.lp-words { font: 600 12.5px var(--mono); color: var(--text-3); }
+.lp-saved { min-height: 18px; font-size: 12.5px; color: oklch(62% .15 150); text-align: right; }
 .lp-timer-btn { margin: 0 0 16px; }
+.lp-tbar { position: relative; height: 4px; max-width: 68ch; margin: 4px 0 12px; overflow: hidden; border-radius: 4px; background: var(--card-2); }
+.lp-tbar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: oklch(64% .14 var(--h)); transition: width 1s linear; }
+.lp-tbar.soon i { background: oklch(72% .15 70); animation: lpPulse 2s ease-in-out infinite; }
+.lp-tbar.over i { width: 100% !important; background: var(--coral); opacity: .5; animation: none; }
+@keyframes lpPulse { 50% { opacity: .45; } }
+
+/* Checkliste und Abgabe */
+.lp-checklist { scroll-margin-top: 140px; }
 .lp-cl-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
 .lp-cl-head b { font: 650 12px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-2); }
 .lp-cl-head span { font-size: 13.5px; color: var(--text-3); }
-.lp-cl { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; }
+.lp-cl { list-style: none; display: grid; gap: 8px; margin: 0 0 18px; padding: 0; }
 .lp-cl li { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.4; color: var(--text-3); }
 .lp-cl li i { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1.6px var(--line); transition: background .2s; }
 .lp-cl li i .ico { width: 13px; height: 13px; stroke-width: 3; }
 .lp-cl li.ok { color: var(--text); }
 .lp-cl li.ok i { background: oklch(70% .16 150); box-shadow: none; color: #fff; }
-.lp-write-head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px; }
-.lp-words { font: 600 12.5px var(--mono); color: var(--text-3); }
-.lp-saved { min-height: 18px; margin: -4px 0 10px; font-size: 12.5px; color: oklch(62% .15 150); text-align: right; }
 .lp-sum { list-style: none; margin: 0 0 14px; padding: 0; border-radius: 16px; background: var(--card-2); }
 .lp-sum li { display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 14.5px; }
 .lp-sum li:last-child { border-bottom: 0; }
 .lp-sum b { font: 600 13px var(--mono); color: var(--text-2); text-align: right; }
-.lp-side { min-width: 0; padding: 14px; border-radius: 24px; background: var(--card); box-shadow: 0 0 0 1px var(--line); max-height: 60dvh; overflow: auto; }
-@media (min-width: 900px) {
-  .lp-grid { grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 28px; }
-  .lp2.with-side .lp-grid { grid-template-columns: 200px minmax(0, 1fr) minmax(0, .85fr); }
-  .lp-steps-nav { position: sticky; top: 90px; flex-direction: column; gap: 2px; overflow: visible; margin: 0; padding: 8px 0; }
-  .lp-steps-nav .lp-kicker { display: block; margin: 0 0 10px 14px; }
-  .lp-st { background: transparent; box-shadow: none; padding: 11px 14px; font-size: 15px; }
-  .lp-st-l { flex: 1; }
-  .lp-card { padding: 34px 40px 36px; }
-  .lp-ch h2 { font-size: 30px; }
-  .lp-side { position: sticky; top: 90px; max-height: calc(100dvh - 110px); }
+
+/* Fokus-Modus: nur Aufgabe, Text und Leiste */
+.learn-page.focus .lp-top, .learn-page.focus .lp-steps-nav, .learn-page.focus .lp-side,
+.learn-page.focus .lp-nofocus, .learn-page.focus .lp-meta, .learn-page.focus .lp-checklist { display: none; }
+.learn-page.focus .lp-grid { display: block; max-width: 72ch; margin: 0 auto; }
+.learn-page.focus .lp-card { padding-top: calc(env(safe-area-inset-top) + 18px); padding-bottom: 90px; }
+.learn-page.focus .lp-q { font-size: 15px; color: var(--text-2); }
+.learn-page.focus .lp-paper { min-height: 60dvh; padding: 4px 0; border-radius: 0; background: transparent; box-shadow: none; }
+.lp-fbar { display: none; }
+.learn-page.focus .lp-fbar { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 12px); transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 10px; max-width: calc(100% - 24px); padding: 8px 8px 8px 16px; border-radius: 999px; white-space: nowrap;
+  background: color-mix(in oklab, var(--card) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.12); font: 600 12px var(--mono); color: var(--text-2); }
+.lp-cnt-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.lp-cnt-wrap .ico { width: 14px; height: 14px; color: oklch(62% .15 150); }
+.lp-fdone { padding: 8px 14px; border: 0; border-radius: 999px; background: oklch(62% .16 var(--h)); color: #fff; font: 700 13px var(--body, inherit); cursor: pointer; }
+.lp-fx { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--card-2); color: var(--text-2); cursor: pointer; }
+.lp-fx .ico { width: 15px; height: 15px; }
+
+/* Breiten */
+@media (max-width: 380px) {
+  .learn-page.focus .lp-fbar .lp-words { display: none; }
 }
-.lp-top { flex-wrap: wrap; row-gap: 8px; }
-.lp-top .lp-title { min-width: 0; }
-.lp-tools { order: 3; width: 100%; justify-content: flex-start; flex-wrap: nowrap; }
-.lp-ch h2 { font-size: 21px; }
 @media (min-width: 700px) {
   .lp-top { flex-wrap: nowrap; }
   .lp-tools { order: 0; width: auto; }
   .lp-ch h2 { font-size: 26px; }
 }
-@media (min-width: 900px) { .lp-ch h2 { font-size: 30px; } }
-#app:has(.lp2) { max-width: 1180px; }
-
-/* ---------- 1.13: Ruhiger lernen – Fokus-Modus, Checkliste nach „Fertig“, Timer-Balken ---------- */
-/* ruhigere Gestaltung */
-.lp-card { box-shadow: none; background: transparent; padding-left: 2px; padding-right: 2px; }
-.lp-st { box-shadow: none; background: var(--card-2); }
-.lp-top { border-bottom-color: transparent; }
-.lp-task { color: var(--text); }
-.lp-q { font-size: 17px; line-height: 1.6; max-width: 65ch; }
-.lp2 .pbar { height: 3px; border-radius: 3px; }
-.lp2 .cards-top { font-size: 12px; opacity: .7; }
-.lp2 .quiz-q, .lp2 .cloze-text { font-size: 18px; line-height: 1.6; max-width: 60ch; }
-.lp-paper { display: block; width: 100%; max-width: 68ch; min-height: 42dvh; margin: 8px 0 4px; padding: 16px 18px; border: 0; border-radius: 18px;
-  background: var(--card); box-shadow: 0 0 0 1px var(--line); font: 400 17px/1.75 var(--body, inherit); resize: vertical; }
-.lp-paper:focus { outline: none; box-shadow: 0 0 0 1.5px oklch(62% .16 var(--h) / .55); }
-.lp-meta { display: flex; justify-content: space-between; max-width: 68ch; margin-bottom: 14px; }
-.lp-meta .lp-saved { margin: 0; }
-.lp-hint.center { text-align: center; margin-top: 8px; }
-@media (min-width: 900px) { .lp-card { padding: 20px 8px 30px; } }
-
-/* Timer als dünner, ablaufender Balken */
-.lp-tbar { position: relative; height: 4px; margin: 4px 0 12px; max-width: 68ch; border-radius: 4px; background: var(--card-2); overflow: hidden; }
-.lp-tbar i { position: absolute; inset: 0 auto 0 0; background: oklch(64% .14 var(--h)); border-radius: 4px; transition: width 1s linear; }
-.lp-tbar.soon i { background: oklch(72% .15 70); animation: lpPulse 2s ease-in-out infinite; }
-.lp-tbar.over i { width: 100% !important; background: var(--coral); opacity: .5; animation: none; }
-@keyframes lpPulse { 50% { opacity: .45; } }
-
-/* Fokus-Leiste unten (nur im Fokus-Modus sichtbar) */
-.lp-fbar { display: none; }
-.learn-page.focus .lp-fbar { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 12px); transform: translateX(-50%); z-index: 20;
-  display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 999px; white-space: nowrap;
-  background: color-mix(in oklab, var(--card) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.12); font: 600 13px var(--mono); color: var(--text-2); }
-.lp-cnt-wrap { display: inline-flex; align-items: center; gap: 4px; }
-.lp-cnt-wrap .ico { width: 14px; height: 14px; color: oklch(62% .15 150); }
-.lp-fdone { border: 0; padding: 8px 14px; border-radius: 999px; background: oklch(62% .16 var(--h)); color: #fff; font: 700 13px var(--body, inherit); cursor: pointer; }
-.lp-fx { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--card-2); color: var(--text-2); cursor: pointer; }
-.lp-fx .ico { width: 15px; height: 15px; }
-
-/* Fokus-Modus: alles außer Aufgabe, Text und Leiste ausblenden */
-.learn-page.focus .lp-top, .learn-page.focus .lp-steps-nav, .learn-page.focus .lp-side,
-.learn-page.focus .lp-nofocus, .learn-page.focus .lp-meta, .learn-page.focus .lp-checklist { display: none !important; }
-.learn-page.focus .lp-grid { display: block; max-width: 72ch; margin: 0 auto; }
-.learn-page.focus .lp-card { padding-top: calc(env(safe-area-inset-top) + 18px); padding-bottom: 90px; }
-.learn-page.focus .lp-q { font-size: 15px; color: var(--text-2); }
-.learn-page.focus .lp-paper { min-height: 60dvh; box-shadow: none; background: transparent; padding: 4px 0; border-radius: 0; }
-.learn-page.focus .lp-paper:focus { box-shadow: none; }
-.learn-page.focus .lp-fbar { max-width: calc(100% - 24px); gap: 10px; font-size: 12px; }
-@media (max-width: 380px) { .learn-page.focus .lp-fbar .lp-words { display: none; } }
-.lp-checklist { scroll-margin-top: 140px; }
+@media (min-width: 900px) {
+  .lp-grid { grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 28px; }
+  .lp2.with-side .lp-grid { grid-template-columns: 200px minmax(0, 1fr) minmax(0, .85fr); }
+  .lp-steps-nav { order: 0; position: sticky; top: 90px; flex-direction: column; gap: 2px; overflow: visible; margin: 0; padding: 8px 0; }
+  .lp-steps-nav .lp-kicker { display: block; margin: 0 0 10px 14px; }
+  .lp-st { padding: 11px 14px; font-size: 15px; }
+  .lp-st:not(.on) { background: transparent; }
+  .lp-st-l { flex: 1; }
+  .lp-card { padding: 20px 8px 30px; }
+  .lp-ch h2 { font-size: 30px; }
+  .lp-side { order: 0; position: sticky; top: 90px; max-height: calc(100dvh - 110px); }
+}
