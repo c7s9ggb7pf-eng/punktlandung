@@ -5,7 +5,7 @@ import {
   addDays, parseDay,
 } from './lib.js';
 import * as V from './views.js';
-import { toast, confetti, openSheet, updateSheet, closeSheet, haptic, runFlaps, resetFlaps, flapTo } from './ui.js';
+import { toast, flushToast, confetti, openSheet, updateSheet, closeSheet, haptic, runFlaps, resetFlaps, flapTo } from './ui.js';
 import { demoState, demoGrades } from './demo.js';
 import * as G from './grades.js';
 import * as ST from './study.js';
@@ -56,6 +56,7 @@ function render() {
     window.scrollTo(0, scrollY);
   }
   afterRender(changed);
+  if (!document.querySelector('.learn-page.focus')) flushToast();
 }
 
 function afterRender(changed) {
@@ -439,6 +440,16 @@ async function uploadFiles(files) {
 }
 
 /** Noten aus einer Sicherungsdatei zurückholen. */
+const LEARN_KEY = /^pl\.(study|cards)\./;
+const learningBackup = () => Object.fromEntries(Object.keys(localStorage).filter((k) => LEARN_KEY.test(k)).map((k) => [k, localStorage.getItem(k)]));
+/** Ergänzt nur, was auf dem Handy fehlt – eine alte Sicherung überschreibt keine neueren Texte. */
+function restoreLearning(d) {
+  for (const [k, v] of Object.entries(d || {})) {
+    if (!LEARN_KEY.test(k) || typeof v !== 'string' || localStorage.getItem(k) != null) continue;
+    try { JSON.parse(v); } catch { continue; }
+    localStorage.setItem(k, v);
+  }
+}
 async function restoreFrom(f) {
   try {
     const d = JSON.parse(await f.text());
@@ -447,6 +458,7 @@ async function restoreFrom(f) {
     localStorage.setItem('pl.grades.prev', JSON.stringify(S.grades));
     S.grades = { ...G.empty(), ...g, exams: g.exams || {} };
     saveGrades();
+    restoreLearning(d.learning);
     toast(`Wiederhergestellt: ${g.subjects.length} Fächer, ${g.entries.length} Noten (Stand ${String(d.at || '').slice(0, 10)}).`, 4000);
     S.tab = 'noten';
     render();
@@ -495,6 +507,19 @@ async function saveTask(v, delay = 0) {
 
 const curSet = () => S.study?.sets?.find((x) => x.id === S._studyOpen);
 const lpSet = () => S.study?.sets?.find((x) => x.id === S.lp?.id);
+// Richtig: kurz die Erklärung zeigen, dann weiter. Falsch: stehen lassen, bis man tippt.
+let advanceTimer = null;
+const ADVANCE_MS = 1600;
+function afterAnswer(ok) {
+  LN.saveRound(S, lpSet());
+  clearTimeout(advanceTimer);
+  if (!ok) return document.querySelector('[data-act="lpNext"]')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const { id, stage, i, phase } = S.lp;
+  advanceTimer = setTimeout(() => {
+    const L = S.lp;
+    if (S.screen === 'learn' && L.id === id && L.stage === stage && L.i === i && L.phase === phase && LN.answeredRight(S, lpSet())) actions.lpNext();
+  }, ADVANCE_MS);
+}
 function lpSavePath(patch) {
   const p = ST.progress(S.lp.id);
   p.path = { ...LN.pathOf(S.lp.id), ...patch };
@@ -1126,8 +1151,10 @@ const actions = {
   // ---------- Lernseite: Übersicht → Lernzettel → Multiple Choice → Lückentext → Anwenden → Abgabe ----------
   lpOpen(el) {
     const id = el.dataset.v;
-    S.lp = { id, stage: 'today', i: 0, side: false, timer: null, focus: false };
+    const timer = LN.pathOf(id).timer;
+    S.lp = { id, stage: 'today', i: 0, side: false, timer: timer && timer.end > Date.now() ? timer : null, focus: false };
     LN.startTicker(S);
+    if (S.lp.timer) keepAwake(true);
     closeSheet(true);
     S._studyOpen = id; // nach dem Schließen setzen – onClose des Blatts löscht die Markierung
     S.learn.ei = 0;
@@ -1137,6 +1164,7 @@ const actions = {
   },
   lpClose() {
     const id = S.lp?.id;
+    clearTimeout(advanceTimer);
     keepAwake(false);
     S.screen = 'main';
     S.tab = 'aufgaben';
@@ -1146,14 +1174,24 @@ const actions = {
   lpStage(el) {
     const k = el.dataset.v;
     if (!LN.unlocked(lpSet(), k)) return toast(`Erst die vorige Stufe mit mindestens ${LN.PASS} % schaffen.`);
-    if (k === 'mc' || k === 'cloze') LN.startRound(S, lpSet(), k);
+    clearTimeout(advanceTimer);
+    if (k === 'mc' || k === 'cloze') LN.openRound(S, lpSet(), k);
     else S.lp = { ...S.lp, stage: k, i: k === 'apply' ? LN.firstOpen(lpSet()) : 0, focus: false };
     S.learn.ei = S.lp.i;
     haptic(5);
     render();
     window.scrollTo(0, 0);
   },
-  lpRestart() { return actions.lpStage({ dataset: { v: S.lp.stage } }); },
+  lpRestart() { LN.startRound(S, lpSet(), S.lp.stage); render(); window.scrollTo(0, 0); },
+  lpReview() { LN.startReview(S, lpSet()); haptic(5); render(); window.scrollTo(0, 0); },
+  async lpCopy() {
+    const set = lpSet();
+    const q = set.material.questions[S.lp.i];
+    try {
+      await navigator.clipboard.writeText(LN.correctionText(set.subject, q, ST.progress(set.id).answers[S.lp.i]));
+      toast('Kopiert – schick es zum Korrigieren an Claude.', 3500);
+    } catch { toast('Kopieren ging nicht – markier deinen Text von Hand.', 3500); }
+  },
   lpSide() { S.lp.side = !S.lp.side; haptic(5); render(); },
   lpSheetDone() {
     lpSavePath({ sheet: true });
@@ -1167,6 +1205,7 @@ const actions = {
     LN.record(S, ok);
     haptic(ok ? 10 : 25);
     render();
+    afterAnswer(ok);
   },
   lpWord(el) {
     const c = lpSet().material.cloze[LN.curItem(S)];
@@ -1175,6 +1214,7 @@ const actions = {
     if (k < 0) return;
     fills[k] = el.dataset.v;
     S.lp.fills = fills;
+    LN.saveRound(S, lpSet());
     haptic(5);
     render();
   },
@@ -1182,6 +1222,7 @@ const actions = {
     const fills = [...(S.lp.fills || [])];
     fills[Number(el.dataset.v)] = null;
     S.lp.fills = fills;
+    LN.saveRound(S, lpSet());
     render();
   },
   lpCheck() {
@@ -1191,9 +1232,12 @@ const actions = {
     LN.record(S, ok);
     haptic(ok ? 10 : 25);
     render();
+    afterAnswer(ok);
   },
   lpNext() {
+    clearTimeout(advanceTimer);
     const r = LN.nextItem(S, lpSet());
+    LN.saveRound(S, lpSet());
     if (r === 'done' && S.lp.pct >= LN.PASS) setTimeout(() => confetti({ y: 0.45, count: 110 }), 150);
     render();
     window.scrollTo(0, 0);
@@ -1202,6 +1246,7 @@ const actions = {
   lpTimer(el) {
     const now = Date.now();
     S.lp.timer = { i: S.lp.i, start: now, end: now + Number(el.dataset.v) * 60000 };
+    lpSavePath({ timer: S.lp.timer });
     S.lp.focus = true;
     haptic(8);
     render();
@@ -1210,7 +1255,7 @@ const actions = {
     if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
   },
   lpFinish() {
-    lpSavePath({ review: { ...(LN.pathOf(S.lp.id).review || {}), [S.lp.i]: true } });
+    lpSavePath({ timer: null, review: { ...(LN.pathOf(S.lp.id).review || {}), [S.lp.i]: true } });
     S.lp.focus = false;
     S.lp.timer = null;
     keepAwake(false);
@@ -1219,7 +1264,7 @@ const actions = {
     render();
     document.querySelector('.lp-checklist')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
-  lpFocusOff() { document.activeElement?.blur?.(); LN.setFocus(S, false); },
+  lpFocusOff() { document.activeElement?.blur?.(); LN.setFocus(S, false); flushToast(); },
   lpCheckApply() { S.learn.ei = S.lp.i; return actions.examCheck(); },
   async lpSubmit() {
     lpSavePath({ submitted: new Date().toISOString() });
@@ -1296,12 +1341,12 @@ const actions = {
 
   // ---------- Noten sichern ----------
   async backup() {
-    const data = { app: 'punktlandung', v: 1, at: new Date().toISOString(), grades: S.grades };
-    const name = `punktlandung-noten-${today()}.json`;
+    const data = { app: 'punktlandung', v: 1, at: new Date().toISOString(), grades: S.grades, learning: learningBackup() };
+    const name = `punktlandung-sicherung-${today()}.json`;
     const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
     try {
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Punktlandung – Noten' });
+        await navigator.share({ files: [file], title: 'Punktlandung – Sicherung' });
       } else {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(file);
@@ -1641,6 +1686,18 @@ document.addEventListener('focusin', (e) => {
   if (S.screen === 'learn' && e.target.closest?.('.exam-input')) LN.setFocus(S, true);
 });
 let wakeLock = null;
+// Nach dem Wechsel in eine andere App gibt das iPhone die Sperre frei: beim Zurückkommen neu anfordern.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.screen === 'learn' && S.lp?.timer?.end > Date.now()) keepAwake(true);
+});
+// Bildschirmtastatur: das iPhone schiebt fest positionierte Leisten nicht hoch – Abstand selbst setzen.
+function keyboardGap() {
+  const v = window.visualViewport;
+  const gap = v.scale > 1.05 ? 0 : Math.max(0, window.innerHeight - v.height - v.offsetTop);
+  document.documentElement.style.setProperty('--kb', `${Math.round(gap)}px`);
+}
+window.visualViewport?.addEventListener('resize', keyboardGap);
+window.visualViewport?.addEventListener('scroll', keyboardGap);
 async function keepAwake(on) {
   try {
     if (on && 'wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');

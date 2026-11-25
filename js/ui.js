@@ -58,9 +58,17 @@ export const symbol = (su, sl) => subjInfo(su, sl).e;
 
 // ---------- Hinweis oben ----------
 let toastTimer;
+let held = null; // im Fokus-Modus wartet der Hinweis, bis man fertig ist
+export function flushToast() {
+  if (!held) return;
+  const [msg, ms] = held;
+  held = null;
+  toast(msg, ms);
+}
 export function toast(msg, ms = 2600) {
   const el = document.getElementById('toast');
   if (!el) return;
+  if (document.querySelector('.learn-page.focus')) { held = [msg, ms]; return; }
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);

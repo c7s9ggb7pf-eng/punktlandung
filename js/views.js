@@ -1179,7 +1179,7 @@ function me(S) {
 
     <h4 class="section-title">Noten</h4>
     <div class="group">
-      <button class="row link" data-act="backup"><span class="r-ico">${icon('lock')}</span><span class="label">Noten sichern<small>${p.lastBackup ? 'Zuletzt am ' + esc(dateLong(p.lastBackup)) : 'Noch nie gesichert'} · als Datei, z. B. in iCloud</small></span>${icon('right', 'chev')}</button>
+      <button class="row link" data-act="backup"><span class="r-ico">${icon('lock')}</span><span class="label">Noten & Lernen sichern<small>${p.lastBackup ? 'Zuletzt am ' + esc(dateLong(p.lastBackup)) : 'Noch nie gesichert'} · als Datei, z. B. in iCloud</small></span>${icon('right', 'chev')}</button>
       <label class="row link up-row"><span class="r-ico">${icon('refresh')}</span><span class="label">Noten wiederherstellen<small>Aus einer gesicherten Datei</small></span>${icon('right', 'chev')}<input type="file" accept="application/json,.json" data-file="restore" aria-label="Sicherungsdatei wählen"></label>
     </div>
 

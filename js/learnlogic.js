@@ -2,13 +2,44 @@
 
 export const PASS = 70;
 
-/** Wortauswahl für einen Lückentext: Lösungen + Ablenker, stabil gemischt. */
-export function wordBank(c, seed) {
-  const words = [...c.gaps, ...(c.distractors || [])];
-  let x = seed * 9301 + 49297;
+/** Mischen, aber stabil: gleicher Startwert = gleiche Reihenfolge (auch nach Neustart der App). */
+function shuffle(list, seed) {
+  const out = [...list];
+  let x = (seed * 9301 + 49297) % 233280;
   const rnd = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
-  for (let i = words.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [words[i], words[j]] = [words[j], words[i]]; }
-  return words;
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
+}
+/** Wortauswahl für einen Lückentext: Lösungen + Ablenker. */
+export const wordBank = (c, seed) => shuffle([...c.gaps, ...(c.distractors || [])], seed);
+/** Antworten je Runde anders anordnen, damit man sich nicht die Position merkt; liefert die Original-Nummern. */
+export const optionOrder = (n, seed) => shuffle(Array.from({ length: n }, (_, i) => i), seed);
+
+// ---------- Angefangene Runde merken ----------
+
+const ROUND_KEYS = ['stage', 'i', 'pick', 'fills', 'checked', 'order', 'phase', 'right', 'wrong', 'wrong2', 'pct', 'seed', 'sig'];
+/** Fingerabdruck der Aufgaben: nach neu erstelltem Material gilt eine alte Runde nicht mehr. */
+export function signature(items) {
+  let h = 0;
+  for (const ch of JSON.stringify(items || [])) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  return String(h);
+}
+export const packRound = (lp) => (lp.phase === 'done' ? null : Object.fromEntries(ROUND_KEYS.map((k) => [k, lp[k] ?? null])));
+export function validRound(r, items) {
+  return !!r && ['first', 'retry'].includes(r.phase) && r.sig === signature(items) && Array.isArray(r.order) && r.i >= 0 && r.i < r.order.length
+    && r.order.every((x) => Number.isInteger(x) && x >= 0 && x < items.length) && Array.isArray(r.wrong) && Array.isArray(r.wrong2);
+}
+/** Gespeicherte Fehler, die es im aktuellen Material noch gibt. */
+export const openErrors = (wrong, n) => [...new Set(wrong || [])].filter((i) => Number.isInteger(i) && i >= 0 && i < n);
+
+/** Text zum Kopieren: Aufgabe, Erwartungshorizont und Antwort – zum Korrigieren schicken. */
+export function correctionText(subject, q, text) {
+  return [
+    `Bitte korrigiere meine Übungsantwort (${subject}, Oberstufe NRW): Punkte von 0–15, was gut ist, was fehlt, ein Tipp.`,
+    `Aufgabe (${q.operator}): ${q.question}`,
+    `Erwartungshorizont: ${q.expectation}`,
+    `Meine Antwort:\n${String(text || '').trim()}`,
+  ].join('\n\n');
 }
 const flat = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 export const same = (a, b) => flat(a) === flat(b);
@@ -23,7 +54,7 @@ export function isUnlocked(material, path, stage) {
 
 /** Reihenfolge einer Runde: was beim letzten Mal falsch war, zuerst – dann der Rest in Originalreihenfolge. */
 export function roundOrder(n, wrongBefore = []) {
-  const first = [...new Set(wrongBefore)].filter((i) => Number.isInteger(i) && i >= 0 && i < n);
+  const first = openErrors(wrongBefore, n);
   return [...first, ...Array.from({ length: n }, (_, i) => i).filter((i) => !first.includes(i))];
 }
 
